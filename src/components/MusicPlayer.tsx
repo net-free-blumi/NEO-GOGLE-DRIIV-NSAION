@@ -139,10 +139,10 @@ const MusicPlayer = ({
           audio.addEventListener('loadedmetadata', handleMetadataLoad);
         }
       }
-    } else if (isNewSong || (audio.readyState === 0 && isPlaying)) {
-      // Only reset to 0 if it's a new song or audio hasn't loaded yet
+    } else if (isNewSong && isPlaying) {
+      // Only reset to 0 if it's a new song AND we're playing
       // Don't reset if audio is already loaded and paused (normal pause)
-    audio.currentTime = 0;
+      audio.currentTime = 0;
       setCurrentTime(0);
     }
     // If audio is already loaded and paused, keep current position (don't reset)
@@ -329,20 +329,21 @@ const MusicPlayer = ({
         setCurrentTime(0);
       } else if (audio.readyState > 0) {
         // Normal pause - save current position BEFORE pausing
-        // Use currentTime from audio element first (most accurate), then from state
+        // Get position from audio element (most accurate) or from state
         const audioPosition = audio.currentTime || 0;
         const statePosition = currentTime || 0;
-        // Use the larger value (more accurate) or audio position if available
-        const position = audioPosition > 0 ? audioPosition : (statePosition > 0 ? statePosition : 0);
-        if (position > 0) {
+        // Use audio position if available and > 0, otherwise use state position
+        let position = 0;
+        if (audioPosition > 0) {
+          position = audioPosition;
+        } else if (statePosition > 0) {
+          position = statePosition;
+        }
+        
+        // Always save position if we have one (even if it's small)
+        if (position >= 0) {
           sessionStorage.setItem(`song_position_${song.id}`, position.toString());
           console.log(`Saved position for pause: ${position} seconds (audio: ${audioPosition}, state: ${statePosition})`);
-        } else {
-          // If both are 0, try to get from state one more time
-          if (statePosition > 0) {
-            sessionStorage.setItem(`song_position_${song.id}`, statePosition.toString());
-            console.log(`Saved position from state for pause: ${statePosition} seconds`);
-          }
         }
       }
       // Don't set isLoading to true when pausing - allow user to resume
