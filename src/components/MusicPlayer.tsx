@@ -106,9 +106,9 @@ const MusicPlayer = ({
     
     if (isNewSong && isPlaying) {
       // Only show loading when starting a new song that's actually playing
-      setIsLoading(true);
-      setIsBuffering(false);
-      setDuration(0);
+    setIsLoading(true);
+    setIsBuffering(false);
+    setDuration(0);
       // Don't reset currentTime here - let it be restored from savedPosition if exists
     } else if (!isPlaying) {
       // When pausing/stopping, don't show loading
@@ -171,7 +171,7 @@ const MusicPlayer = ({
     } else if (isNewSong && isPlaying && audio.readyState === 0 && !savedPosition) {
       // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet AND no saved position
       // Don't reset if audio is already loaded (normal pause/resume) or if there's a saved position
-      audio.currentTime = 0;
+    audio.currentTime = 0;
       setCurrentTime(0);
     }
     // If audio is already loaded and paused, keep current position (don't reset)
@@ -179,8 +179,9 @@ const MusicPlayer = ({
     // Set up streaming optimization
     audio.setAttribute('preload', 'none');
     
-    // Only load when user wants to play
-    if (isPlaying) {
+    // Only load when user wants to play AND it's a new song (not resuming)
+    // Don't call load() when resuming - it resets the position to 0!
+    if (isPlaying && isNewSongOrNotLoaded) {
     audio.load();
     }
   }, [song.id, song.url, isPlaying]);
@@ -223,13 +224,17 @@ const MusicPlayer = ({
     };
     
     if (isPlaying) {
-      // Ensure audio is loaded before playing
-      if (!audio.src || audio.readyState === 0) {
-        audio.load();
-      }
-      
       // Restore saved position if exists (for resume after pause)
       const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+      
+      // Ensure audio is loaded before playing
+      // But don't call load() if we're resuming - it resets position to 0!
+      if (!audio.src || audio.readyState === 0) {
+        // Only load if there's no saved position (new song)
+        if (!savedPosition) {
+          audio.load();
+        }
+      }
       if (savedPosition) {
         const position = parseFloat(savedPosition);
         if (!isNaN(position) && position > 0) {
