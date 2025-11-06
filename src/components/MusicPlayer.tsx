@@ -98,25 +98,36 @@ const MusicPlayer = ({
     }
     
     // Build URL with token if needed
-    const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
+    // Only set src if it's a new song or if audio hasn't loaded yet
+    // Don't reset src when pausing/resuming the same song (this causes position to reset)
+    const isNewSongOrNotLoaded = !audio.src || audio.readyState === 0 || !audio.src.includes(song.url.split('?')[0]);
     
-    // Refresh token if needed and build URL
-    refreshTokenIfNeeded().then((accessToken) => {
-    let finalUrl = song.url;
-    if (isNetlify && accessToken) {
-        // Check if URL already has query parameters
-        const separator = song.url.includes('?') ? '&' : '?';
-        finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-      } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
-        // For non-Netlify URLs, also add token if not present
-        const separator = song.url.includes('?') ? '&' : '?';
-        finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-      }
+    if (isNewSongOrNotLoaded) {
+      const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
       
-      // Optimize audio element for streaming
-      audio.preload = 'none'; // Don't preload - stream on demand
-      audio.src = finalUrl;
-    });
+      // Refresh token if needed and build URL
+      refreshTokenIfNeeded().then((accessToken) => {
+        let finalUrl = song.url;
+        if (isNetlify && accessToken) {
+          // Check if URL already has query parameters
+          const separator = song.url.includes('?') ? '&' : '?';
+          finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+        } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
+          // For non-Netlify URLs, also add token if not present
+          const separator = song.url.includes('?') ? '&' : '?';
+          finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+        }
+        
+        // Only set src if it's different from current src (avoid resetting position)
+        const currentSrcBase = audio.src ? audio.src.split('?')[0] : '';
+        const newSrcBase = finalUrl.split('?')[0];
+        if (currentSrcBase !== newSrcBase) {
+          // Optimize audio element for streaming
+          audio.preload = 'none'; // Don't preload - stream on demand
+          audio.src = finalUrl;
+        }
+      });
+    }
     
     // Restore saved position if exists (for resume after pause)
     // Don't reset position if audio is already loaded and paused (normal pause, not new song)
