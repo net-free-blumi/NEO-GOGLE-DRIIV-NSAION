@@ -33,7 +33,7 @@ const MusicPlayer = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
 
-  // Load song and set up audio element
+  // Load song and set up audio element with optimized streaming
   useEffect(() => {
     if (!audioRef.current || !song.url) return;
 
@@ -52,24 +52,71 @@ const MusicPlayer = ({
       finalUrl = `${song.url}?token=${encodeURIComponent(accessToken)}`;
     }
     
+    // Optimize audio element for streaming
+    audio.preload = 'none'; // Don't preload - stream on demand
     audio.src = finalUrl;
     audio.currentTime = 0;
     
-    // Load metadata
-    audio.load();
-  }, [song.id, song.url]);
+    // Set up streaming optimization
+    audio.setAttribute('preload', 'none');
+    
+    // Only load when user wants to play
+    if (isPlaying) {
+      audio.load();
+    }
+  }, [song.id, song.url, isPlaying]);
 
-  // Handle play/pause
+  // Handle play/pause with better buffering
   useEffect(() => {
     if (!audioRef.current) return;
     
+    const audio = audioRef.current;
+    
     if (isPlaying) {
-      audioRef.current.play().catch(err => {
-        console.error('Play error:', err);
-        setIsLoading(false);
-      });
+      // Ensure audio is loaded before playing
+      if (!audio.src || audio.readyState === 0) {
+        audio.load();
+      }
+      
+      // Wait for enough data before playing to prevent stuttering
+      const tryPlay = async () => {
+        // Wait for at least some data to be buffered
+        if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or better
+          try {
+            await audio.play();
+            setIsLoading(false);
+          } catch (err) {
+            console.error('Play error:', err);
+            setIsLoading(false);
+          }
+        } else {
+          // Wait a bit and try again, but limit retries
+          const maxRetries = 50; // 5 seconds max wait
+          let retries = 0;
+          const checkAndPlay = () => {
+            if (audio.readyState >= 2) {
+              audio.play().catch(err => {
+                console.error('Play error:', err);
+                setIsLoading(false);
+              });
+            } else if (retries < maxRetries) {
+              retries++;
+              setTimeout(checkAndPlay, 100);
+            } else {
+              // Force play even if not ready (browser will buffer)
+              audio.play().catch(err => {
+                console.error('Play error after retries:', err);
+                setIsLoading(false);
+              });
+            }
+          };
+          checkAndPlay();
+        }
+      };
+      
+      tryPlay();
     } else {
-      audioRef.current.pause();
+      audio.pause();
     }
   }, [isPlaying]);
 
@@ -79,13 +126,27 @@ const MusicPlayer = ({
     if (!audio) return;
 
     const handleLoadedMetadata = () => {
-      setDuration(audio.duration || 0);
+      const duration = audio.duration || 0;
+      setDuration(duration);
       setIsLoading(false);
+      
+      // Save duration to sessionStorage for display in song list
+      if (duration > 0 && song.id) {
+        const durations = JSON.parse(sessionStorage.getItem('song_durations') || '{}');
+        durations[song.id] = duration;
+        sessionStorage.setItem('song_durations', JSON.stringify(durations));
+      }
     };
 
     const handleCanPlay = () => {
       setIsLoading(false);
       setIsBuffering(false);
+    };
+
+    const handleCanPlayThrough = () => {
+      // Enough data buffered to play through
+      setIsBuffering(false);
+      setIsLoading(false);
     };
 
     const handleWaiting = () => {
@@ -96,6 +157,26 @@ const MusicPlayer = ({
       setIsBuffering(false);
     };
 
+    const handleProgress = () => {
+      // Update buffering state based on readyState and buffered amount
+      const buffered = audio.buffered;
+      const currentTime = audio.currentTime;
+      
+      // Check if we have enough buffered data ahead
+      let hasEnoughBuffer = false;
+      if (buffered.length > 0) {
+        const bufferedEnd = buffered.end(buffered.length - 1);
+        // Need at least 3 seconds of buffer ahead
+        hasEnoughBuffer = bufferedEnd - currentTime > 3;
+      }
+      
+      if (audio.readyState >= 3 && hasEnoughBuffer) { // HAVE_FUTURE_DATA and enough buffer
+        setIsBuffering(false);
+      } else if (audio.readyState < 2 || !hasEnoughBuffer) {
+        setIsBuffering(true);
+      }
+    };
+
     const handleError = (e: any) => {
       console.error('Audio error:', e);
       setIsLoading(false);
@@ -104,15 +185,19 @@ const MusicPlayer = ({
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('canplay', handleCanPlay);
+    audio.addEventListener('canplaythrough', handleCanPlayThrough);
     audio.addEventListener('waiting', handleWaiting);
     audio.addEventListener('playing', handlePlaying);
+    audio.addEventListener('progress', handleProgress);
     audio.addEventListener('error', handleError);
 
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('canplay', handleCanPlay);
+      audio.removeEventListener('canplaythrough', handleCanPlayThrough);
       audio.removeEventListener('waiting', handleWaiting);
       audio.removeEventListener('playing', handlePlaying);
+      audio.removeEventListener('progress', handleProgress);
       audio.removeEventListener('error', handleError);
     };
   }, [song.url]);
@@ -189,7 +274,7 @@ const MusicPlayer = ({
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         crossOrigin="anonymous"
-        preload="metadata"
+        preload="none"
       />
 
       <div className="fixed bottom-0 left-0 right-0 bg-[hsl(var(--player-bg))] border-t border-border backdrop-blur-xl z-50">

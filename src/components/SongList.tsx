@@ -27,8 +27,22 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     const stored = sessionStorage.getItem('song_view_mode') as ViewMode | null;
     return stored === 'grid' || stored === 'list' ? stored : 'grid';
   });
-  const [songDurations, setSongDurations] = useState<Map<string, number>>(new Map());
-  const durationCache = useRef<Map<string, number>>(new Map());
+  // Load durations from sessionStorage (saved when songs are played)
+  const songDurations = useMemo(() => {
+    const durations = new Map<string, number>();
+    try {
+      const stored = sessionStorage.getItem('song_durations');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        Object.entries(parsed).forEach(([id, duration]) => {
+          durations.set(id, duration as number);
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load durations from storage:', e);
+    }
+    return durations;
+  }, [currentSong?.id]); // Update when current song changes (duration might be loaded)
 
   const formatDuration = (seconds: number) => {
     if (!seconds || seconds === 0 || isNaN(seconds)) return '--:--';
@@ -333,93 +347,15 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
   // Don't expand folders by default - keep them collapsed
   // User must click to open folders
 
-  // Load song durations lazily
+  // Don't preload durations - it causes too much data usage
+  // Duration will be shown when song is played (from MusicPlayer)
+  
+  // Force re-render when current song changes to update durations
+  const [, forceUpdate] = useState(0);
   useEffect(() => {
-    const loadDurations = async () => {
-      const accessToken = sessionStorage.getItem('gd_access_token');
-      if (!accessToken) return;
-
-      const songsToLoad = songs.filter(song => {
-        const cached = durationCache.current.get(song.id);
-        return !cached && song.duration === 0;
-      });
-
-      if (songsToLoad.length === 0) return;
-
-      // Load durations in batches to avoid overwhelming the browser
-      const batchSize = 5;
-      for (let i = 0; i < songsToLoad.length; i += batchSize) {
-        const batch = songsToLoad.slice(i, i + batchSize);
-        
-        await Promise.all(
-          batch.map(async (song) => {
-            try {
-              // Check cache first
-              if (durationCache.current.has(song.id)) {
-                const cached = durationCache.current.get(song.id)!;
-                setSongDurations(prev => new Map(prev).set(song.id, cached));
-                return;
-              }
-
-              // Create audio element to load metadata
-              const audio = new Audio();
-              const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
-              let finalUrl = song.url;
-              
-              if (isNetlify && accessToken) {
-                finalUrl = `${song.url}?token=${encodeURIComponent(accessToken)}`;
-              } else if (!isNetlify && !song.url.includes('token=')) {
-                finalUrl = `${song.url}${song.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(accessToken)}`;
-              }
-
-              audio.src = finalUrl;
-              audio.preload = 'metadata';
-
-              await new Promise<void>((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                  audio.removeEventListener('loadedmetadata', handler);
-                  audio.removeEventListener('error', errorHandler);
-                  resolve();
-                }, 5000); // 5 second timeout
-
-                const handler = () => {
-                  clearTimeout(timeout);
-                  const duration = audio.duration || 0;
-                  if (duration > 0) {
-                    durationCache.current.set(song.id, duration);
-                    setSongDurations(prev => new Map(prev).set(song.id, duration));
-                  }
-                  audio.removeEventListener('loadedmetadata', handler);
-                  audio.removeEventListener('error', errorHandler);
-                  resolve();
-                };
-
-                const errorHandler = () => {
-                  clearTimeout(timeout);
-                  audio.removeEventListener('loadedmetadata', handler);
-                  audio.removeEventListener('error', errorHandler);
-                  resolve(); // Don't reject, just skip this song
-                };
-
-                audio.addEventListener('loadedmetadata', handler);
-                audio.addEventListener('error', errorHandler);
-                audio.load();
-              });
-            } catch (error) {
-              console.warn(`Failed to load duration for ${song.title}:`, error);
-            }
-          })
-        );
-
-        // Small delay between batches
-        if (i + batchSize < songsToLoad.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
-    };
-
-    loadDurations();
-  }, [songs]);
+    // Trigger re-render to update durations from sessionStorage
+    forceUpdate(prev => prev + 1);
+  }, [currentSong?.id]);
 
   // Get all songs from all folders for grid view
   const allSongs = useMemo(() => {
