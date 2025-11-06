@@ -100,13 +100,15 @@ const UnifiedSpeakerSelector = ({
       }
 
       // 5. Bluetooth (if available)
+      // Note: Web Bluetooth API requires user interaction to select devices
+      // We can't automatically discover all Bluetooth speakers
+      // Instead, we'll add a generic "Bluetooth" option that prompts the user when selected
       if (navigator.bluetooth) {
-        try {
-          const bluetoothDevices = await discoverBluetoothSpeakers();
-          discoveredSpeakers.push(...bluetoothDevices);
-        } catch (e) {
-          console.log('Bluetooth discovery error:', e);
-        }
+        discoveredSpeakers.push({
+          id: 'bluetooth-generic',
+          name: 'Bluetooth',
+          type: 'Bluetooth'
+        });
       }
 
       // 6. Browser (default)
@@ -244,24 +246,28 @@ const UnifiedSpeakerSelector = ({
     
     try {
       if (navigator.bluetooth) {
-        // Request Bluetooth device with audio output capability
-        const device = await navigator.bluetooth.requestDevice({
-          filters: [
-            { services: ['audio_sink'] },
-            { services: ['audio_source'] },
-            { namePrefix: 'Speaker' },
-            { namePrefix: 'Audio' },
-          ],
-          optionalServices: ['audio_sink', 'audio_source']
-        });
+        // Bluetooth Web API has limitations - we can't discover devices automatically
+        // We can only request a device when user explicitly chooses one
+        // So we'll add a placeholder option that prompts the user to select a device
         
-        if (device) {
-          bluetoothSpeakers.push({
-            id: `bluetooth-${device.id}`,
-            name: device.name || 'Bluetooth Speaker',
-            type: 'Bluetooth'
-          });
-        }
+        // Note: The Web Bluetooth API requires user interaction to select a device
+        // We can't automatically discover all Bluetooth speakers
+        // Instead, we'll add a generic "Bluetooth" option that will prompt the user
+        
+        // For now, we'll skip automatic discovery and just add a generic option
+        // The user will need to select their Bluetooth device when they choose this option
+        
+        // If you want to try to request a device, you need valid UUIDs:
+        // A2DP (Advanced Audio Distribution Profile) uses these UUIDs:
+        // - Audio Sink: 0000110b-0000-1000-8000-00805f9b34fb
+        // - Audio Source: 0000110a-0000-1000-8000-00805f9b34fb
+        
+        // But even with valid UUIDs, requestDevice requires user interaction
+        // and can't be called automatically during discovery
+        
+        // For now, we'll return empty and handle Bluetooth selection differently
+        // when the user actually selects the Bluetooth option
+        
       }
     } catch (e) {
       // User cancelled or Bluetooth not available
@@ -401,12 +407,61 @@ const UnifiedSpeakerSelector = ({
       throw new Error("לא נמצא נגן אודיו פעיל");
     }
     
-    // Bluetooth audio routing is handled by the OS
-    // The user needs to select the Bluetooth device in their OS settings
-    toast({
-      title: "Bluetooth",
-      description: "בחר רמקול Bluetooth בהגדרות המכשיר",
-    });
+    try {
+      // Web Bluetooth API requires user interaction to select devices
+      // We can't automatically discover all Bluetooth speakers
+      // When user selects "Bluetooth", we'll prompt them to choose a device
+      if (navigator.bluetooth && speaker.id === 'bluetooth-generic') {
+        try {
+          // Valid Bluetooth UUIDs for A2DP (Advanced Audio Distribution Profile):
+          // Audio Sink: 0000110b-0000-1000-8000-00805f9b34fb
+          // Audio Source: 0000110a-0000-1000-8000-00805f9b34fb
+          
+          const device = await navigator.bluetooth.requestDevice({
+            filters: [
+              { services: ['0000110b-0000-1000-8000-00805f9b34fb'] }, // A2DP Audio Sink
+              { namePrefix: 'Speaker' },
+              { namePrefix: 'Audio' },
+              { namePrefix: 'BT' },
+            ],
+            optionalServices: ['0000110b-0000-1000-8000-00805f9b34fb']
+          });
+          
+          if (device) {
+            toast({
+              title: "Bluetooth מחובר",
+              description: `מחובר ל-${device.name || 'Bluetooth Device'}`,
+            });
+            // Note: Web Bluetooth API doesn't directly route audio
+            // The user still needs to select the device in OS settings
+            // But we've established the connection
+          }
+        } catch (bluetoothError: any) {
+          // User cancelled or device not found
+          if (bluetoothError.name === 'NotFoundError') {
+            throw new Error("לא נמצא מכשיר Bluetooth");
+          } else if (bluetoothError.name === 'SecurityError') {
+            throw new Error("נדרשות הרשאות Bluetooth");
+          } else if (bluetoothError.name === 'AbortError') {
+            // User cancelled - don't show error, just return
+            return;
+          } else {
+            // Other errors - show message
+            throw new Error(bluetoothError.message || "שגיאה בחיבור Bluetooth");
+          }
+        }
+      } else {
+        // Bluetooth audio routing is handled by the OS
+        // The user needs to select the Bluetooth device in their OS settings
+        toast({
+          title: "Bluetooth",
+          description: "בחר רמקול Bluetooth בהגדרות המכשיר או במערכת ההפעלה",
+        });
+      }
+    } catch (error: any) {
+      // Re-throw to be handled by the caller
+      throw error;
+    }
   };
 
   const getSpeakerIcon = (type: Speaker['type']) => {
