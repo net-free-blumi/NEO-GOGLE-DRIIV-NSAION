@@ -66,7 +66,10 @@ exports.handler = async (event) => {
     
     // Parse range header to get start and end
     let start = 0;
-    let end = null; // No end limit - let Google Drive handle it
+    let end = null;
+    
+    // Default chunk size: 2MB to stay under Netlify's 6MB limit
+    const DEFAULT_CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
     
     if (rangeHeader) {
       const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
@@ -74,19 +77,18 @@ exports.handler = async (event) => {
         start = parseInt(match[1], 10);
         if (match[2]) {
           end = parseInt(match[2], 10);
+        } else {
+          // If no end specified, limit to default chunk size
+          end = start + DEFAULT_CHUNK_SIZE - 1;
         }
-        // If no end specified, don't set it - let Google Drive stream the rest
       }
+    } else {
+      // No range header - limit to first chunk to avoid loading entire file
+      end = DEFAULT_CHUNK_SIZE - 1;
     }
     
-    // Set Range header if we have a range request
-    if (rangeHeader) {
-      if (end !== null) {
-        fetchHeaders['Range'] = `bytes=${start}-${end}`;
-      } else {
-        fetchHeaders['Range'] = `bytes=${start}-`;
-      }
-    }
+    // Always set Range header to limit chunk size
+    fetchHeaders['Range'] = `bytes=${start}-${end}`;
 
     const driveRes = await fetch(driveUrl, { headers: fetchHeaders });
 
@@ -142,8 +144,9 @@ exports.handler = async (event) => {
       }
     }
 
-    // Return 206 for range requests, 200 for full file
-    const statusCode = rangeHeader ? 206 : 200;
+    // Always return 206 (Partial Content) since we're always returning chunks
+    // This tells the browser to expect more data and make additional range requests
+    const statusCode = 206;
 
     return {
       statusCode,
