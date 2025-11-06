@@ -106,10 +106,10 @@ const MusicPlayer = ({
     
     if (isNewSong && isPlaying) {
       // Only show loading when starting a new song that's actually playing
-    setIsLoading(true);
-    setIsBuffering(false);
-    setDuration(0);
-    setCurrentTime(0);
+      setIsLoading(true);
+      setIsBuffering(false);
+      setDuration(0);
+      // Don't reset currentTime here - let it be restored from savedPosition if exists
     } else if (!isPlaying) {
       // When pausing/stopping, don't show loading
       setIsLoading(false);
@@ -253,67 +253,57 @@ const MusicPlayer = ({
       
       // If audio is already loaded and paused, try to play immediately (resume)
       if (audio.readyState >= 2 && audio.paused) {
-        // Audio is already loaded, restore position first if needed, then resume playback
-        const restoreAndPlay = () => {
-          if (savedPosition) {
-            const position = parseFloat(savedPosition);
-            if (!isNaN(position) && position > 0) {
-              // Set position immediately if duration is available
-              if (audio.duration > 0 && position < audio.duration) {
-                audio.currentTime = position;
-                setCurrentTime(position);
-              } else if (audio.readyState > 0) {
-                // Wait for duration to load, then set position
-                const handleDurationLoad = () => {
-                  if (audio.duration > 0 && position < audio.duration) {
-                    audio.currentTime = position;
-                    setCurrentTime(position);
-                  }
-                  audio.removeEventListener('loadedmetadata', handleDurationLoad);
-                  audio.removeEventListener('durationchange', handleDurationLoad);
-                };
-                audio.addEventListener('loadedmetadata', handleDurationLoad);
-                audio.addEventListener('durationchange', handleDurationLoad);
-              }
-            }
-          }
-          // Resume playback after setting position
-          audio.play().then(() => {
-            setIsLoading(false);
-          }).catch(err => {
-            console.error('Play error:', err);
-            setIsLoading(false);
-          });
-        };
-        
-        // Small delay to ensure position is set before playing
+        // Audio is already loaded - restore position FIRST, then play
         if (savedPosition) {
           const position = parseFloat(savedPosition);
-          if (!isNaN(position) && position > 0 && audio.duration > 0 && position < audio.duration) {
-            // Set position immediately and then play
-            audio.currentTime = position;
-            setCurrentTime(position);
-            // Use setTimeout to ensure position is set before playing
-            setTimeout(() => {
-              audio.play().then(() => {
-                setIsLoading(false);
-              }).catch(err => {
-                console.error('Play error:', err);
-                setIsLoading(false);
-              });
-            }, 50);
-          } else {
-            restoreAndPlay();
+          if (!isNaN(position) && position > 0) {
+            // Set position immediately if duration is available
+            if (audio.duration > 0 && position < audio.duration) {
+              audio.currentTime = position;
+              setCurrentTime(position);
+              // Use a longer delay to ensure position is set before playing
+              setTimeout(() => {
+                audio.play().then(() => {
+                  setIsLoading(false);
+                }).catch(err => {
+                  console.error('Play error:', err);
+                  setIsLoading(false);
+                });
+              }, 200); // Increased delay to ensure position is set
+              return; // Don't continue
+            } else {
+              // Wait for duration to load, then set position and play
+              const handleDurationLoad = () => {
+                if (audio.duration > 0 && position < audio.duration) {
+                  audio.currentTime = position;
+                  setCurrentTime(position);
+                  // Delay to ensure position is set before playing
+                  setTimeout(() => {
+                    audio.play().then(() => {
+                      setIsLoading(false);
+                    }).catch(err => {
+                      console.error('Play error:', err);
+                      setIsLoading(false);
+                    });
+                  }, 200);
+                }
+                audio.removeEventListener('loadedmetadata', handleDurationLoad);
+                audio.removeEventListener('durationchange', handleDurationLoad);
+              };
+              audio.addEventListener('loadedmetadata', handleDurationLoad);
+              audio.addEventListener('durationchange', handleDurationLoad);
+              return; // Don't continue
+            }
           }
-        } else {
-          // No saved position, just play
-          audio.play().then(() => {
-            setIsLoading(false);
-          }).catch(err => {
-            console.error('Play error:', err);
-            setIsLoading(false);
-          });
         }
+        
+        // No saved position, just play from current position
+        audio.play().then(() => {
+          setIsLoading(false);
+        }).catch(err => {
+          console.error('Play error:', err);
+          setIsLoading(false);
+        });
         return; // Don't continue with tryPlay logic
       }
       
@@ -369,15 +359,9 @@ const MusicPlayer = ({
       
       tryPlay();
     } else {
-      // When pausing, save current position but don't show loading state
-      // Check if position was cleared (stop was called)
-      const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
-      if (savedPosition === null && audio.readyState > 0) {
-        // Stop was called - reset position to 0
-        audio.currentTime = 0;
-        setCurrentTime(0);
-      } else if (audio.readyState > 0) {
-        // Normal pause - save current position BEFORE pausing
+      // When pausing, save current position IMMEDIATELY before pausing
+      // This ensures we capture the exact position where the user paused
+      if (audio.readyState > 0) {
         // Get position from audio element (most accurate) or from state
         const audioPosition = audio.currentTime || 0;
         const statePosition = currentTime || 0;
@@ -390,11 +374,13 @@ const MusicPlayer = ({
         }
         
         // Always save position if we have one (even if it's small)
+        // This is critical for resume functionality
         if (position >= 0) {
           sessionStorage.setItem(`song_position_${song.id}`, position.toString());
           console.log(`Saved position for pause: ${position} seconds (audio: ${audioPosition}, state: ${statePosition})`);
         }
       }
+      
       // Don't set isLoading to true when pausing - allow user to resume
       setIsLoading(false); // Make sure loading is false when pausing
       audio.pause();
