@@ -130,7 +130,7 @@ const MusicPlayer = ({
           if (audio.duration > 0 && position < audio.duration) {
             audio.currentTime = position;
             setCurrentTime(position);
-          } else {
+          } else if (audio.readyState > 0) {
             // Wait for metadata to load
             const handleMetadataLoad = () => {
               if (audio.duration > 0 && position < audio.duration) {
@@ -146,13 +146,67 @@ const MusicPlayer = ({
       
       // If audio is already loaded and paused, try to play immediately (resume)
       if (audio.readyState >= 2 && audio.paused) {
-        // Audio is already loaded, just resume playback
-        audio.play().then(() => {
-          setIsLoading(false);
-        }).catch(err => {
-          console.error('Play error:', err);
-          setIsLoading(false);
-        });
+        // Audio is already loaded, restore position first if needed, then resume playback
+        const restoreAndPlay = () => {
+          if (savedPosition) {
+            const position = parseFloat(savedPosition);
+            if (!isNaN(position) && position > 0) {
+              // Set position immediately if duration is available
+              if (audio.duration > 0 && position < audio.duration) {
+                audio.currentTime = position;
+                setCurrentTime(position);
+              } else if (audio.readyState > 0) {
+                // Wait for duration to load, then set position
+                const handleDurationLoad = () => {
+                  if (audio.duration > 0 && position < audio.duration) {
+                    audio.currentTime = position;
+                    setCurrentTime(position);
+                  }
+                  audio.removeEventListener('loadedmetadata', handleDurationLoad);
+                  audio.removeEventListener('durationchange', handleDurationLoad);
+                };
+                audio.addEventListener('loadedmetadata', handleDurationLoad);
+                audio.addEventListener('durationchange', handleDurationLoad);
+              }
+            }
+          }
+          // Resume playback after setting position
+          audio.play().then(() => {
+            setIsLoading(false);
+          }).catch(err => {
+            console.error('Play error:', err);
+            setIsLoading(false);
+          });
+        };
+        
+        // Small delay to ensure position is set before playing
+        if (savedPosition) {
+          const position = parseFloat(savedPosition);
+          if (!isNaN(position) && position > 0 && audio.duration > 0 && position < audio.duration) {
+            // Set position immediately and then play
+            audio.currentTime = position;
+            setCurrentTime(position);
+            // Use setTimeout to ensure position is set before playing
+            setTimeout(() => {
+              audio.play().then(() => {
+                setIsLoading(false);
+              }).catch(err => {
+                console.error('Play error:', err);
+                setIsLoading(false);
+              });
+            }, 50);
+          } else {
+            restoreAndPlay();
+          }
+        } else {
+          // No saved position, just play
+          audio.play().then(() => {
+            setIsLoading(false);
+          }).catch(err => {
+            console.error('Play error:', err);
+            setIsLoading(false);
+          });
+        }
         return; // Don't continue with tryPlay logic
       }
       
