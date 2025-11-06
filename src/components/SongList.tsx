@@ -605,20 +605,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 </div>
               );
             })}
-            {/* Render root level songs if any (or songs from "all music" folder) */}
-            {(() => {
-              const songsToDisplay = allMusicFolder 
-                ? allMusicFolder.songs 
-                : folder.songs;
-              
-              return songsToDisplay.length > 0 ? (
-                <div className="mb-8 last:mb-0">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                    {songsToDisplay.map((song) => renderSongCard(song))}
-                  </div>
-                </div>
-              ) : null;
-            })()}
+            {/* Don't render root level songs - they should be inside folders */}
           </>
         );
       }
