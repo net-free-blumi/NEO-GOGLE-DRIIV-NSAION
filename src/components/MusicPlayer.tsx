@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Song } from "@/pages/Index";
@@ -10,6 +10,7 @@ interface MusicPlayerProps {
   onPlayPause: () => void;
   onNext: () => void;
   onPrevious: () => void;
+  onStop?: () => void;
   selectedSpeaker: string | null;
   repeatMode?: 'none' | 'one' | 'all';
   onRepeatModeChange?: (mode: 'none' | 'one' | 'all') => void;
@@ -21,6 +22,7 @@ const MusicPlayer = ({
   onPlayPause,
   onNext,
   onPrevious,
+  onStop,
   selectedSpeaker,
   repeatMode = 'none',
   onRepeatModeChange,
@@ -41,10 +43,10 @@ const MusicPlayer = ({
     // Only set loading if it's a new song (not resuming)
     const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
     if (!savedPosition) {
-      setIsLoading(true);
-      setIsBuffering(false);
-      setDuration(0);
-      setCurrentTime(0);
+    setIsLoading(true);
+    setIsBuffering(false);
+    setDuration(0);
+    setCurrentTime(0);
     }
     
     // Build URL with token if needed
@@ -87,7 +89,7 @@ const MusicPlayer = ({
         }
       }
     } else {
-      audio.currentTime = 0;
+    audio.currentTime = 0;
       setCurrentTime(0);
     }
     
@@ -96,7 +98,7 @@ const MusicPlayer = ({
     
     // Only load when user wants to play
     if (isPlaying) {
-      audio.load();
+    audio.load();
     }
   }, [song.id, song.url, isPlaying]);
 
@@ -179,9 +181,9 @@ const MusicPlayer = ({
               });
             } else if (audio.readyState >= 2) { // Accept HAVE_CURRENT_DATA
               audio.play().catch(err => {
-                console.error('Play error:', err);
-                setIsLoading(false);
-              });
+        console.error('Play error:', err);
+        setIsLoading(false);
+      });
             } else if (retries < maxRetries) {
               retries++;
               setTimeout(checkAndPlay, 100);
@@ -200,15 +202,35 @@ const MusicPlayer = ({
       tryPlay();
     } else {
       // When pausing, save current position but don't show loading state
-      if (audio.readyState > 0) {
-        // Save current position to sessionStorage
+      // Check if position was cleared (stop was called)
+      const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+      if (savedPosition === null && audio.readyState > 0) {
+        // Stop was called - reset position to 0
+        audio.currentTime = 0;
+        setCurrentTime(0);
+      } else if (audio.readyState > 0) {
+        // Normal pause - save current position
         const position = audio.currentTime;
         sessionStorage.setItem(`song_position_${song.id}`, position.toString());
       }
       // Don't set isLoading to true when pausing - allow user to resume
       audio.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, song.id]);
+
+  // Handle stop - reset position when saved position is cleared
+  useEffect(() => {
+    if (!audioRef.current) return;
+    
+    const audio = audioRef.current;
+    const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+    
+    // If saved position was cleared (stop was called) and audio is paused, reset to 0
+    if (savedPosition === null && !isPlaying && audio.readyState > 0) {
+      audio.currentTime = 0;
+      setCurrentTime(0);
+    }
+  }, [isPlaying, song.id]);
 
   // Update duration when metadata loads
   useEffect(() => {
@@ -488,6 +510,17 @@ const MusicPlayer = ({
                   <Play className="w-6 h-6" fill="currentColor" />
                 )}
               </Button>
+              {onStop && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onStop}
+                  className="hover:bg-secondary/80 transition-colors"
+                  title="עצירה לגמרי"
+                >
+                  <Square className="w-5 h-5" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"

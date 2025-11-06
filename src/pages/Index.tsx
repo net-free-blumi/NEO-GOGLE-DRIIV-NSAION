@@ -91,6 +91,15 @@ const Index = () => {
     setIsPlaying(!isPlaying);
   };
 
+  const handleStop = () => {
+    // Stop completely - reset position to 0, pause, and clear saved position
+    if (currentSong) {
+      sessionStorage.removeItem(`song_position_${currentSong.id}`);
+      setIsPlaying(false);
+      // The MusicPlayer component will handle resetting the audio position
+    }
+  };
+
   const handleNext = () => {
     if (!currentSong || songs.length === 0) return;
     
@@ -248,6 +257,7 @@ const Index = () => {
           onPlayPause={handlePlayPause}
           onNext={handleNext}
           onPrevious={handlePrevious}
+          onStop={handleStop}
           selectedSpeaker={selectedSpeaker}
           repeatMode={repeatMode}
           onRepeatModeChange={setRepeatMode}
