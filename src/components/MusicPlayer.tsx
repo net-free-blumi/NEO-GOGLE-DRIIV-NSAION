@@ -378,23 +378,31 @@ const MusicPlayer = ({
     } else {
       // When pausing, save current position IMMEDIATELY before pausing
       // This ensures we capture the exact position where the user paused
+      // IMPORTANT: Always read the position from BOTH audio.currentTime AND state
+      // Use the most recent value - state is updated via handleTimeUpdate in real-time
       if (audio.readyState > 0) {
-        // Get position from audio element (most accurate) or from state
+        // Read from both sources to get the most accurate value
         const audioPosition = audio.currentTime || 0;
         const statePosition = currentTime || 0;
-        // Use audio position if available and > 0, otherwise use state position
+        
+        // Use the LARGER value - this is the most recent position
+        // When pausing multiple times, we want the latest position, not the first one
         let position = 0;
-        if (audioPosition > 0) {
+        if (audioPosition > 0 && statePosition > 0) {
+          // Use the larger value (more recent)
+          position = Math.max(audioPosition, statePosition);
+        } else if (audioPosition > 0) {
           position = audioPosition;
         } else if (statePosition > 0) {
           position = statePosition;
         }
         
-        // Always save position if we have one (even if it's small)
-        // This is critical for resume functionality
+        // CRITICAL: Always save the position, even if it seems the same
+        // This ensures we always have the latest position when pausing multiple times
+        // The position will be different each time the user pauses
         if (position >= 0) {
           sessionStorage.setItem(`song_position_${song.id}`, position.toString());
-          console.log(`Saved position for pause: ${position} seconds (audio: ${audioPosition}, state: ${statePosition})`);
+          console.log(`Saved position for pause: ${position} seconds (audio: ${audioPosition}, state: ${statePosition}, using: ${position})`);
         }
       }
       
