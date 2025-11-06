@@ -218,6 +218,12 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                                   <span className="hidden sm:inline">{formatFileSize(song.fileSize)}</span>
                                 </>
                               )}
+                              {songDurations.get(song.id) || song.duration ? (
+                                <>
+                                  {(song.artist || song.fileSize) && <span className="hidden sm:inline">•</span>}
+                                  <span className="hidden sm:inline">{formatDuration(songDurations.get(song.id) || song.duration || 0)}</span>
+                                </>
+                              ) : null}
                             </div>
                           </div>
 
@@ -293,6 +299,18 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                     </h3>
                     <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground mt-0.5 sm:mt-1 flex-wrap">
                       {song.artist && <span className="truncate">{song.artist}</span>}
+                      {song.fileSize && (
+                        <>
+                          {song.artist && <span className="hidden sm:inline">•</span>}
+                          <span className="hidden sm:inline">{formatFileSize(song.fileSize)}</span>
+                        </>
+                      )}
+                      {songDurations.get(song.id) || song.duration ? (
+                        <>
+                          {(song.artist || song.fileSize) && <span className="hidden sm:inline">•</span>}
+                          <span className="hidden sm:inline">{formatDuration(songDurations.get(song.id) || song.duration || 0)}</span>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
@@ -416,16 +434,99 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
 
   // Render grid view with collapsible folders
   const renderGridView = () => {
+    // Render folder card for grid view
+    const renderFolderCard = (folder: FolderNode) => {
+      const isExpanded = expandedFolders.has(folder.fullPath);
+      const totalSongs = (() => {
+        const countSongs = (f: FolderNode): number => {
+          let count = f.songs.length;
+          f.subfolders.forEach(subfolder => {
+            count += countSongs(subfolder);
+          });
+          return count;
+        };
+        return countSongs(folder);
+      })();
+
+      return (
+        <div
+          key={folder.fullPath}
+          className="group relative bg-secondary/30 rounded-lg p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50"
+          onClick={() => toggleFolder(folder.fullPath)}
+        >
+          {/* Folder Icon */}
+          <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+            <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
+            {/* Expand/Collapse Indicator */}
+            <div className="absolute top-2 right-2">
+              {isExpanded ? (
+                <ChevronDown className="w-5 h-5 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              )}
+            </div>
+          </div>
+          {/* Folder Info */}
+          <div className="min-w-0">
+            <h4 className="font-medium truncate text-sm sm:text-base text-foreground">
+              {folder.name}
+            </h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              {totalSongs} שירים
+              {folder.subfolders.size > 0 && ` • ${folder.subfolders.size} תיקיות`}
+            </p>
+          </div>
+        </div>
+      );
+    };
+
     // Render folder tree recursively for grid view
     const renderFolderGrid = (folder: FolderNode, level: number = 0): JSX.Element | null => {
       // Skip root folder display (empty name means root)
       if (!folder.name && level === 0) {
-        // Render subfolders only, skip root folder name
+        // Render top-level folders as grid, skip root folder name
+        const topLevelFolders = Array.from(folder.subfolders.values())
+          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'));
+
         return (
           <>
-            {Array.from(folder.subfolders.values())
-              .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-              .map(subfolder => renderFolderGrid(subfolder, level + 1))}
+            {/* Render top-level folders as grid */}
+            {topLevelFolders.length > 0 && (
+              <div className="mb-8">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {topLevelFolders.map((subfolder) => renderFolderCard(subfolder))}
+                </div>
+              </div>
+            )}
+            {/* Render expanded folder contents */}
+            {topLevelFolders.map((subfolder) => {
+              const isExpanded = expandedFolders.has(subfolder.fullPath);
+              if (!isExpanded) return null;
+              
+              return (
+                <div key={subfolder.fullPath} className="mb-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Folder className="w-5 h-5 text-primary" />
+                    <h3 className="text-lg font-semibold">{subfolder.name}</h3>
+                    <span className="text-sm text-muted-foreground">
+                      ({subfolder.songs.length} שירים
+                      {subfolder.subfolders.size > 0 && `, ${subfolder.subfolders.size} תיקיות`})
+                    </span>
+                  </div>
+                  {/* Render subfolders recursively */}
+                  {Array.from(subfolder.subfolders.values())
+                    .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                    .map(subsubfolder => renderFolderGrid(subsubfolder, level + 2))}
+                  {/* Render songs in this folder */}
+                  {subfolder.songs.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                      {subfolder.songs.map((song) => renderSongCard(song))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* Render root level songs if any */}
             {folder.songs.length > 0 && (
               <div className="mb-8 last:mb-0">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
@@ -437,6 +538,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
         );
       }
       
+      // For nested folders (level > 1), render as collapsible sections
       const isExpanded = expandedFolders.has(folder.fullPath);
       const hasContent = folder.songs.length > 0 || folder.subfolders.size > 0;
       
@@ -468,7 +570,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              {/* Render subfolders */}
+              {/* Render subfolders recursively */}
               {Array.from(folder.subfolders.values())
                 .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
                 .map(subfolder => renderFolderGrid(subfolder, level + 1))}
