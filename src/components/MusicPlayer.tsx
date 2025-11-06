@@ -150,9 +150,9 @@ const MusicPlayer = ({
           audio.addEventListener('loadedmetadata', handleMetadataLoad);
         }
       }
-    } else if (isNewSong && isPlaying) {
-      // Only reset to 0 if it's a new song AND we're playing
-      // Don't reset if audio is already loaded and paused (normal pause)
+    } else if (isNewSong && isPlaying && audio.readyState === 0) {
+      // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet
+      // Don't reset if audio is already loaded (normal pause/resume)
       audio.currentTime = 0;
       setCurrentTime(0);
     }
