@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MusicPlayer from "@/components/MusicPlayer";
 import SongList from "@/components/SongList";
-import SpeakerSelector from "@/components/SpeakerSelector";
-import CastButton from "@/components/CastButton";
+import UnifiedSpeakerSelector from "@/components/UnifiedSpeakerSelector";
 import GoogleDriveConnect, { loadSongsFromDrive } from "@/components/GoogleDriveConnect";
 import SettingsMenu from "@/components/SettingsMenu";
 import { useToast } from "@/hooks/use-toast";
@@ -203,17 +202,13 @@ const Index = () => {
                 />
               </div>
               <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
-                <SpeakerSelector
+                <UnifiedSpeakerSelector
                   selectedSpeaker={selectedSpeaker}
                   onSpeakerChange={setSelectedSpeaker}
+                  mediaUrl={currentSong?.url}
+                  contentType="audio/mpeg"
+                  title={currentSong?.title}
                 />
-                {currentSong && (
-                  <CastButton
-                    mediaUrl={currentSong.url}
-                    contentType="audio/mpeg"
-                    title={currentSong.title}
-                  />
-                )}
                 <SettingsMenu onLogout={handleLogout} isLoggedIn={songs.length > 0} />
               </div>
             </div>
