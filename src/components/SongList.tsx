@@ -334,10 +334,26 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
   useEffect(() => {
     if (expandedFolders.size === 0 && folderTree.subfolders.size > 0) {
       const newExpanded = new Set<string>();
-      // Expand all top-level folders (direct children of root)
+      
+      // Check if "all music" folder exists
+      const allMusicFolder = Array.from(folderTree.subfolders.values())
+        .find(subfolder => {
+          const folderName = subfolder.name.toLowerCase();
+          return folderName.includes('all music') || folderName.includes('allmusic');
+        });
+      
+      // If "all music" exists, expand its contents instead
+      if (allMusicFolder) {
+        Array.from(allMusicFolder.subfolders.values()).forEach((folder: FolderNode) => {
+          newExpanded.add(folder.fullPath);
+        });
+      } else {
+        // Otherwise, expand all top-level folders (direct children of root)
       Array.from(folderTree.subfolders.values()).forEach((folder: FolderNode) => {
         newExpanded.add(folder.fullPath);
       });
+      }
+      
       if (newExpanded.size > 0) {
         setExpandedFolders(newExpanded);
       }
@@ -497,21 +513,40 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       // Skip root folder display (empty name means root)
       if (!folder.name && level === 0) {
         // Render top-level folders as grid, skip root folder name
+        // Also filter out "all music" folder if it exists
         const topLevelFolders = Array.from(folder.subfolders.values())
+          .filter(subfolder => {
+            // Remove "all music" folder from display
+            const folderName = subfolder.name.toLowerCase();
+            return !folderName.includes('all music') && !folderName.includes('allmusic');
+          })
           .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'));
+        
+        // If "all music" folder exists, get its contents instead
+        const allMusicFolder = Array.from(folder.subfolders.values())
+          .find(subfolder => {
+            const folderName = subfolder.name.toLowerCase();
+            return folderName.includes('all music') || folderName.includes('allmusic');
+          });
+        
+        // If we found "all music" folder, use its contents as top-level folders
+        const foldersToDisplay = allMusicFolder 
+          ? Array.from(allMusicFolder.subfolders.values())
+              .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+          : topLevelFolders;
 
         return (
           <>
             {/* Render top-level folders as grid */}
-            {topLevelFolders.length > 0 && (
+            {foldersToDisplay.length > 0 && (
               <div className="mb-8">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                  {topLevelFolders.map((subfolder) => renderFolderCard(subfolder))}
+                  {foldersToDisplay.map((subfolder) => renderFolderCard(subfolder))}
                 </div>
               </div>
             )}
             {/* Render expanded folder contents */}
-            {topLevelFolders.map((subfolder) => {
+            {foldersToDisplay.map((subfolder) => {
               const isExpanded = expandedFolders.has(subfolder.fullPath);
               if (!isExpanded) return null;
               
@@ -596,14 +631,20 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 </div>
               );
             })}
-            {/* Render root level songs if any */}
-            {folder.songs.length > 0 && (
-              <div className="mb-8 last:mb-0">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                  {folder.songs.map((song) => renderSongCard(song))}
+            {/* Render root level songs if any (or songs from "all music" folder) */}
+            {(() => {
+              const songsToDisplay = allMusicFolder 
+                ? allMusicFolder.songs 
+                : folder.songs;
+              
+              return songsToDisplay.length > 0 ? (
+                <div className="mb-8 last:mb-0">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                    {songsToDisplay.map((song) => renderSongCard(song))}
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : null;
+            })()}
           </>
         );
       }
@@ -806,10 +847,125 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
         renderGridView()
       ) : (
       <div className="divide-y divide-border">
-        {Array.from(folderTree.subfolders.values())
+        {(() => {
+          // Filter out "all music" folder and use its contents instead
+          const allMusicFolder = Array.from(folderTree.subfolders.values())
+            .find(subfolder => {
+              const folderName = subfolder.name.toLowerCase();
+              return folderName.includes('all music') || folderName.includes('allmusic');
+            });
+          
+          const foldersToDisplay = allMusicFolder
+            ? Array.from(allMusicFolder.subfolders.values())
           .sort((a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, 'he-IL'))
-          .map((folder: FolderNode) => renderFolder(folder))}
-        {folderTree.songs.length > 0 && renderFolder(folderTree)}
+            : Array.from(folderTree.subfolders.values())
+                .filter(subfolder => {
+                  const folderName = subfolder.name.toLowerCase();
+                  return !folderName.includes('all music') && !folderName.includes('allmusic');
+                })
+                .sort((a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, 'he-IL'));
+          
+          const songsToDisplay = allMusicFolder
+            ? allMusicFolder.songs
+            : folderTree.songs;
+          
+          return (
+            <>
+              {foldersToDisplay.map((folder: FolderNode) => renderFolder(folder))}
+              {songsToDisplay.length > 0 && (
+                <div className="divide-y divide-border/50">
+                  {songsToDisplay.map((song, index) => {
+                    const isCurrentSong = currentSong?.id === song.id;
+                    return (
+                      <div
+                        key={song.id}
+                        className={`group flex items-center gap-2 sm:gap-4 p-2 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+                          isCurrentSong ? "bg-secondary/70" : ""
+                        }`}
+                        onClick={() => onSongSelect(song)}
+                      >
+                        {/* Index / Play Button */}
+                        <div className="w-6 sm:w-8 text-center flex-shrink-0">
+                          {isCurrentSong ? (
+                            <div className="flex items-center justify-center">
+                              <div className="w-3 sm:w-4 flex gap-0.5 items-end">
+                                <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_infinite] h-2 sm:h-3" />
+                                <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.1s_infinite] h-3 sm:h-4" />
+                                <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.2s_infinite] h-1.5 sm:h-2" />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground group-hover:hidden text-xs">
+                              {index + 1}
+                            </span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`w-6 h-6 sm:w-8 sm:h-8 hidden group-hover:inline-flex ${
+                              isCurrentSong ? "inline-flex" : ""
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSongSelect(song);
+                            }}
+                          >
+                            {isCurrentSong ? (
+                              <Pause className="w-3 h-3 sm:w-4 sm:h-4" />
+                            ) : (
+                              <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                            )}
+                          </Button>
+                        </div>
+                        {/* Album Art */}
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                          {song.coverUrl ? (
+                            <img
+                              src={song.coverUrl}
+                              alt={song.title}
+                              className="w-full h-full rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="text-lg sm:text-xl">🎵</span>
+                          )}
+                        </div>
+                        {/* Song Info */}
+                        <div className="flex-1 min-w-0">
+                          <h3
+                            className={`font-medium truncate text-sm sm:text-base ${
+                              isCurrentSong ? "text-primary" : "text-foreground"
+                            }`}
+                          >
+                            {song.title}
+                          </h3>
+                          <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground mt-0.5 sm:mt-1 flex-wrap">
+                            {song.artist && <span className="truncate">{song.artist}</span>}
+                            {song.fileSize && (
+                              <>
+                                {song.artist && <span className="hidden sm:inline">•</span>}
+                                <span className="hidden sm:inline">{formatFileSize(song.fileSize)}</span>
+                              </>
+                            )}
+                            {songDurations.get(song.id) || song.duration ? (
+                              <>
+                                {(song.artist || song.fileSize) && <span className="hidden sm:inline">•</span>}
+                                <span className="hidden sm:inline">{formatDuration(songDurations.get(song.id) || song.duration || 0)}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                        {/* Duration */}
+                        <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
+                          {formatDuration(songDurations.get(song.id) || song.duration || 0)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
       )}
     </div>
