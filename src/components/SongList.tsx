@@ -2,7 +2,7 @@ import { Play, Pause, Folder, ChevronRight, ChevronDown, Grid3x3, List, Loader2 
 import { Button } from "@/components/ui/button";
 import { Song } from "@/pages/Index";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 
 interface SongListProps {
   songs: Song[];
@@ -27,6 +27,8 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     const stored = sessionStorage.getItem('song_view_mode') as ViewMode | null;
     return stored === 'grid' || stored === 'list' ? stored : 'grid';
   });
+  const [songDurations, setSongDurations] = useState<Map<string, number>>(new Map());
+  const durationCache = useRef<Map<string, number>>(new Map());
 
   const formatDuration = (seconds: number) => {
     if (!seconds || seconds === 0) return '--:--';
@@ -221,7 +223,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
 
                           {/* Duration */}
                           <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
-                            {formatDuration(song.duration)}
+                            {formatDuration(songDurations.get(song.id) || song.duration || 0)}
                           </div>
                         </div>
                       );
@@ -294,7 +296,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                     </div>
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
-                    {formatDuration(song.duration)}
+                    {formatDuration(songDurations.get(song.id) || song.duration || 0)}
                   </div>
                 </div>
               );
@@ -310,18 +312,95 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     sessionStorage.setItem('song_view_mode', viewMode);
   }, [viewMode]);
 
-  // Expand root by default on mount
+  // Don't expand folders by default - keep them collapsed
+
+  // Load song durations lazily
   useEffect(() => {
-    if (expandedFolders.size === 0 && folderTree.subfolders.size > 0) {
-      const newExpanded = new Set<string>();
-      Array.from(folderTree.subfolders.values()).forEach((folder: FolderNode) => {
-        newExpanded.add(folder.fullPath);
+    const loadDurations = async () => {
+      const accessToken = sessionStorage.getItem('gd_access_token');
+      if (!accessToken) return;
+
+      const songsToLoad = songs.filter(song => {
+        const cached = durationCache.current.get(song.id);
+        return !cached && song.duration === 0;
       });
-      if (newExpanded.size > 0) {
-        setExpandedFolders(newExpanded);
+
+      if (songsToLoad.length === 0) return;
+
+      // Load durations in batches to avoid overwhelming the browser
+      const batchSize = 5;
+      for (let i = 0; i < songsToLoad.length; i += batchSize) {
+        const batch = songsToLoad.slice(i, i + batchSize);
+        
+        await Promise.all(
+          batch.map(async (song) => {
+            try {
+              // Check cache first
+              if (durationCache.current.has(song.id)) {
+                const cached = durationCache.current.get(song.id)!;
+                setSongDurations(prev => new Map(prev).set(song.id, cached));
+                return;
+              }
+
+              // Create audio element to load metadata
+              const audio = new Audio();
+              const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
+              let finalUrl = song.url;
+              
+              if (isNetlify && accessToken) {
+                finalUrl = `${song.url}?token=${encodeURIComponent(accessToken)}`;
+              } else if (!isNetlify && !song.url.includes('token=')) {
+                finalUrl = `${song.url}${song.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(accessToken)}`;
+              }
+
+              audio.src = finalUrl;
+              audio.preload = 'metadata';
+
+              await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                  audio.removeEventListener('loadedmetadata', handler);
+                  audio.removeEventListener('error', errorHandler);
+                  resolve();
+                }, 5000); // 5 second timeout
+
+                const handler = () => {
+                  clearTimeout(timeout);
+                  const duration = audio.duration || 0;
+                  if (duration > 0) {
+                    durationCache.current.set(song.id, duration);
+                    setSongDurations(prev => new Map(prev).set(song.id, duration));
+                  }
+                  audio.removeEventListener('loadedmetadata', handler);
+                  audio.removeEventListener('error', errorHandler);
+                  resolve();
+                };
+
+                const errorHandler = () => {
+                  clearTimeout(timeout);
+                  audio.removeEventListener('loadedmetadata', handler);
+                  audio.removeEventListener('error', errorHandler);
+                  resolve(); // Don't reject, just skip this song
+                };
+
+                audio.addEventListener('loadedmetadata', handler);
+                audio.addEventListener('error', errorHandler);
+                audio.load();
+              });
+            } catch (error) {
+              console.warn(`Failed to load duration for ${song.title}:`, error);
+            }
+          })
+        );
+
+        // Small delay between batches
+        if (i + batchSize < songsToLoad.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
-    }
-  }, [folderTree, expandedFolders.size]);
+    };
+
+    loadDurations();
+  }, [songs]);
 
   // Get all songs from all folders for grid view
   const allSongs = useMemo(() => {
@@ -335,100 +414,149 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     return collectSongs(folderTree);
   }, [folderTree]);
 
-  // Render grid view
+  // Render grid view with collapsible folders
   const renderGridView = () => {
-    // Group songs by folder
-    const songsByFolder = new Map<string, Song[]>();
-    allSongs.forEach(song => {
-      const folderPath = song.folderPath || 'ללא תיקייה';
-      if (!songsByFolder.has(folderPath)) {
-        songsByFolder.set(folderPath, []);
+    // Render folder tree recursively for grid view
+    const renderFolderGrid = (folder: FolderNode, level: number = 0): JSX.Element | null => {
+      // Skip root folder display (empty name means root)
+      if (!folder.name && level === 0) {
+        // Render subfolders only, skip root folder name
+        return (
+          <>
+            {Array.from(folder.subfolders.values())
+              .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+              .map(subfolder => renderFolderGrid(subfolder, level + 1))}
+            {folder.songs.length > 0 && (
+              <div className="mb-8 last:mb-0">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {folder.songs.map((song) => renderSongCard(song))}
+                </div>
+              </div>
+            )}
+          </>
+        );
       }
-      songsByFolder.get(folderPath)!.push(song);
-    });
+      
+      const isExpanded = expandedFolders.has(folder.fullPath);
+      const hasContent = folder.songs.length > 0 || folder.subfolders.size > 0;
+      
+      if (!hasContent) return null;
+      
+      return (
+        <div key={folder.fullPath} className="mb-8 last:mb-0">
+          {/* Folder Header - Collapsible */}
+          <Collapsible
+            open={isExpanded}
+            onOpenChange={() => toggleFolder(folder.fullPath)}
+          >
+            <CollapsibleTrigger asChild>
+              <div className="flex items-center gap-2 mb-4 cursor-pointer hover:bg-secondary/30 p-2 rounded-lg transition-colors">
+                <Folder className="w-5 h-5 text-primary" />
+                <h3 className="text-lg font-semibold">{folder.name}</h3>
+                <span className="text-sm text-muted-foreground">({folder.songs.length} שירים</span>
+                {folder.subfolders.size > 0 && (
+                  <span className="text-sm text-muted-foreground">, {folder.subfolders.size} תיקיות</span>
+                )}
+                <span className="text-sm text-muted-foreground">)</span>
+                <span className="mr-auto">
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </span>
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              {/* Render subfolders */}
+              {Array.from(folder.subfolders.values())
+                .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                .map(subfolder => renderFolderGrid(subfolder, level + 1))}
+              
+              {/* Render songs in this folder */}
+              {folder.songs.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                  {folder.songs.map((song) => renderSongCard(song))}
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      );
+    };
+    
+    // Render song card
+    const renderSongCard = (song: Song) => {
+      const isCurrentSong = currentSong?.id === song.id;
+      // Get duration from cache or song object
+      const songDuration = songDurations.get(song.id) || song.duration || 0;
+      return (
+        <div
+          key={song.id}
+          className={`group relative bg-secondary/30 rounded-lg p-3 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+            isCurrentSong ? "ring-2 ring-primary bg-secondary/70" : ""
+          }`}
+          onClick={() => onSongSelect(song)}
+        >
+          {/* Album Art / Cover */}
+          <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20">
+            {song.coverUrl ? (
+              <img
+                src={song.coverUrl}
+                alt={song.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-4xl sm:text-5xl">🎵</span>
+              </div>
+            )}
+            {/* Play Button Overlay */}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-12 h-12 rounded-full bg-primary/90 hover:bg-primary text-primary-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSongSelect(song);
+                }}
+              >
+                {isCurrentSong ? (
+                  <Pause className="w-6 h-6" />
+                ) : (
+                  <Play className="w-6 h-6 ml-0.5" />
+                )}
+              </Button>
+            </div>
+            {/* Current Song Indicator */}
+            {isCurrentSong && (
+              <div className="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full animate-pulse" />
+            )}
+          </div>
+          {/* Song Info */}
+          <div className="min-w-0">
+            <h4 className={`font-medium truncate text-sm sm:text-base ${
+              isCurrentSong ? "text-primary" : "text-foreground"
+            }`}>
+              {song.title}
+            </h4>
+            {song.artist && (
+              <p className="text-xs text-muted-foreground truncate mt-1">
+                {song.artist}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              {formatDuration(songDuration)}
+            </p>
+          </div>
+        </div>
+      );
+    };
 
     return (
       <div className="p-4 sm:p-6">
-        {Array.from(songsByFolder.entries())
-          .sort(([a], [b]) => a.localeCompare(b, 'he-IL'))
-          .map(([folderPath, folderSongs]) => (
-            <div key={folderPath} className="mb-8 last:mb-0">
-              {folderPath !== 'ללא תיקייה' && (
-                <div className="flex items-center gap-2 mb-4">
-                  <Folder className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold">{folderPath}</h3>
-                  <span className="text-sm text-muted-foreground">({folderSongs.length} שירים)</span>
-                </div>
-              )}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                {folderSongs.map((song) => {
-                  const isCurrentSong = currentSong?.id === song.id;
-                  return (
-                    <div
-                      key={song.id}
-                      className={`group relative bg-secondary/30 rounded-lg p-3 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
-                        isCurrentSong ? "ring-2 ring-primary bg-secondary/70" : ""
-                      }`}
-                      onClick={() => onSongSelect(song)}
-                    >
-                      {/* Album Art / Cover */}
-                      <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20">
-                        {song.coverUrl ? (
-                          <img
-                            src={song.coverUrl}
-                            alt={song.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <span className="text-4xl sm:text-5xl">🎵</span>
-                          </div>
-                        )}
-                        {/* Play Button Overlay */}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="w-12 h-12 rounded-full bg-primary/90 hover:bg-primary text-primary-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSongSelect(song);
-                            }}
-                          >
-                            {isCurrentSong ? (
-                              <Pause className="w-6 h-6" />
-                            ) : (
-                              <Play className="w-6 h-6 ml-0.5" />
-                            )}
-                          </Button>
-                        </div>
-                        {/* Current Song Indicator */}
-                        {isCurrentSong && (
-                          <div className="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full animate-pulse" />
-                        )}
-                      </div>
-                      {/* Song Info */}
-                      <div className="min-w-0">
-                        <h4 className={`font-medium truncate text-sm sm:text-base ${
-                          isCurrentSong ? "text-primary" : "text-foreground"
-                        }`}>
-                          {song.title}
-                        </h4>
-                        {song.artist && (
-                          <p className="text-xs text-muted-foreground truncate mt-1">
-                            {song.artist}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatDuration(song.duration)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+        {renderFolderGrid(folderTree)}
       </div>
     );
   };
@@ -438,10 +566,10 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       <div className="p-3 sm:p-4 border-b border-border bg-secondary/30">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg sm:text-xl font-semibold">השירים שלי</h2>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              {songs.length} שירים
-            </p>
+        <h2 className="text-lg sm:text-xl font-semibold">השירים שלי</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+          {songs.length} שירים
+        </p>
           </div>
           <div className="flex items-center gap-2">
             {/* View Toggle */}
@@ -505,12 +633,12 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       {viewMode === 'grid' ? (
         renderGridView()
       ) : (
-        <div className="divide-y divide-border">
-          {Array.from(folderTree.subfolders.values())
-            .sort((a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, 'he-IL'))
-            .map((folder: FolderNode) => renderFolder(folder))}
-          {folderTree.songs.length > 0 && renderFolder(folderTree)}
-        </div>
+      <div className="divide-y divide-border">
+        {Array.from(folderTree.subfolders.values())
+          .sort((a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, 'he-IL'))
+          .map((folder: FolderNode) => renderFolder(folder))}
+        {folderTree.songs.length > 0 && renderFolder(folderTree)}
+      </div>
       )}
     </div>
   );
