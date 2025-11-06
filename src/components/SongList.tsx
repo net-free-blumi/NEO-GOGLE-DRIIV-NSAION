@@ -500,6 +500,46 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
           : topLevelFolders;
 
+        // Helper function to render folder contents directly below
+        const renderFolderContents = (folder: FolderNode, level: number = 0): JSX.Element | null => {
+          const isExpanded = expandedFolders.has(folder.fullPath);
+          if (!isExpanded) return null;
+          
+          return (
+            <div key={`${folder.fullPath}-contents`} className="mt-2 mb-4">
+              {/* Render subfolders as grid - directly below parent folder */}
+              {folder.subfolders.size > 0 && (
+                <div className="mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                    {Array.from(folder.subfolders.values())
+                      .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                      .map(subsubfolder => {
+                        const isSubExpanded = expandedFolders.has(subsubfolder.fullPath);
+                        return (
+                          <div key={subsubfolder.fullPath}>
+                            {renderFolderCard(subsubfolder)}
+                            {/* Render subfolder contents directly below - recursively */}
+                            {isSubExpanded && (
+                              <div className="mt-2 mb-4">
+                                {renderFolderContents(subsubfolder, level + 1)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+              {/* Render songs in this folder - directly below subfolders */}
+              {folder.songs.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
+                  {folder.songs.map((song) => renderSongCard(song))}
+                </div>
+              )}
+            </div>
+          );
+        };
+
         return (
           <>
             {/* Render top-level folders as grid */}
@@ -508,61 +548,14 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
                   {foldersToDisplay.map((subfolder) => renderFolderCard(subfolder))}
                 </div>
-                {/* Render expanded folder contents - directly below the grid */}
+                {/* Render expanded folder contents - directly below each folder */}
                 {foldersToDisplay.map((subfolder) => {
                   const isExpanded = expandedFolders.has(subfolder.fullPath);
                   if (!isExpanded) return null;
                   
                   return (
-                    <div key={subfolder.fullPath} className="mt-4 mb-6 w-full">
-                      <div>
-                        {/* Render subfolders as grid - directly below parent folder */}
-                        {subfolder.subfolders.size > 0 && (
-                          <div className="mb-4">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                              {Array.from(subfolder.subfolders.values())
-                                .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                                .map(subsubfolder => renderFolderCard(subsubfolder))}
-                            </div>
-                          </div>
-                        )}
-                        {/* Render songs in this folder - directly below subfolders */}
-                        {subfolder.songs.length > 0 && (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
-                            {subfolder.songs.map((song) => renderSongCard(song))}
-                          </div>
-                        )}
-                        {/* Render expanded subfolders recursively */}
-                        {Array.from(subfolder.subfolders.values())
-                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                          .map(subsubfolder => {
-                            const isSubExpanded = expandedFolders.has(subsubfolder.fullPath);
-                            if (!isSubExpanded) return null;
-                            
-                            return (
-                              <div key={subsubfolder.fullPath} className="mt-4 mb-6">
-                                <div>
-                                  {/* Render nested subfolders */}
-                                  {subsubfolder.subfolders.size > 0 && (
-                                    <div className="mb-4">
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                                        {Array.from(subsubfolder.subfolders.values())
-                                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                                          .map(nestedFolder => renderFolderCard(nestedFolder))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {/* Render songs in this subfolder */}
-                                  {subsubfolder.songs.length > 0 && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
-                                      {subsubfolder.songs.map((song) => renderSongCard(song))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
+                    <div key={`${subfolder.fullPath}-contents`} className="mt-2 mb-4">
+                      {renderFolderContents(subfolder)}
                     </div>
                   );
                 })}
