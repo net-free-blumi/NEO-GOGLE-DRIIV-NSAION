@@ -1,90 +1,98 @@
-# Git Upload Script - Run this from the project directory
-# Usage: .\git-upload-all.ps1
+# Git Upload Script - Upload all code to GitHub
+# This script will upload all code to GitHub, even if it already exists
 
-$ErrorActionPreference = "Continue"
+$repoPath = Get-Location
 $remoteUrl = "https://github.com/net-free-blumi/NEO-GOGLE-DRIIV-NSAION.git"
 
-Write-Host "=== Git Upload Script ===" -ForegroundColor Cyan
+Write-Host "========================================="
+Write-Host "Git Upload Script"
+Write-Host "========================================="
+Write-Host "Current directory: $repoPath"
+Write-Host "Remote URL: $remoteUrl"
 Write-Host ""
 
-# Configure git safe directory
-Write-Host "Configuring git safe directory..." -ForegroundColor Yellow
-git config --global --add safe.directory "*" 2>$null
-
-# Check if we're in a git repository
+# Initialize git if needed
 if (-not (Test-Path ".git")) {
-    Write-Host "Initializing git repository..." -ForegroundColor Yellow
+    Write-Host "Initializing git repository..."
     git init
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to initialize git repository" -ForegroundColor Red
+        Write-Host "Error: Failed to initialize git repository" -ForegroundColor Red
         exit 1
     }
 }
 
 # Add remote if not exists
-Write-Host "Checking remote..." -ForegroundColor Yellow
-$remotes = git remote 2>&1 | Out-String
-if ($remotes -notmatch "origin") {
-    Write-Host "Adding remote origin..." -ForegroundColor Yellow
+$remotes = git remote 2>$null
+if ($null -eq $remotes -or $remotes -notcontains "origin") {
+    Write-Host "Adding remote origin..."
     git remote add origin $remoteUrl
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to add remote" -ForegroundColor Red
+        exit 1
+    }
 } else {
-    Write-Host "Updating remote origin URL..." -ForegroundColor Yellow
+    Write-Host "Setting remote origin URL..."
     git remote set-url origin $remoteUrl
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to set remote URL" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # Check current branch
-Write-Host "Checking branch..." -ForegroundColor Yellow
-$currentBranch = git branch --show-current 2>&1 | Out-String
-$currentBranch = $currentBranch.Trim()
-if ([string]::IsNullOrEmpty($currentBranch)) {
-    Write-Host "Creating main branch..." -ForegroundColor Yellow
-    git checkout -b main 2>&1 | Out-Null
+$currentBranch = git branch --show-current 2>$null
+if ($null -eq $currentBranch) {
+    Write-Host "Creating main branch..."
+    git checkout -b main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to create main branch" -ForegroundColor Red
+        exit 1
+    }
 } else {
-    Write-Host "Current branch: $currentBranch" -ForegroundColor Green
+    Write-Host "Current branch: $currentBranch"
     if ($currentBranch -ne "main") {
-        git branch -M main 2>&1 | Out-Null
+        Write-Host "Switching to main branch..."
+        git checkout -b main 2>$null
+        git branch -M main
     }
 }
 
 # Add all files
 Write-Host ""
-Write-Host "Adding all files..." -ForegroundColor Yellow
+Write-Host "Adding all files..."
 git add .
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to add files" -ForegroundColor Red
+    Write-Host "Error: Failed to add files" -ForegroundColor Red
     exit 1
 }
 
 # Check if there are changes to commit
-Write-Host "Checking for changes..." -ForegroundColor Yellow
-$status = git status --porcelain 2>&1 | Out-String
-if ($status.Trim()) {
-    Write-Host "Committing changes..." -ForegroundColor Yellow
-    $commitMessage = "Update: Add email authentication, grid/list view toggle, refresh button, and album art support"
-    git commit -m $commitMessage
+$status = git status --porcelain
+if ($status) {
+    Write-Host "Committing changes..."
+    git commit -m "Update: Fix audio playback, improve folder navigation, and enhance UI"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to commit changes" -ForegroundColor Red
+        Write-Host "Error: Failed to commit changes" -ForegroundColor Red
         exit 1
     }
-    Write-Host "Changes committed successfully!" -ForegroundColor Green
 } else {
-    Write-Host "No changes to commit" -ForegroundColor Yellow
+    Write-Host "No changes to commit"
 }
 
-# Push to main branch
+# Push to main branch (force push to overwrite)
 Write-Host ""
-Write-Host "Pushing to GitHub..." -ForegroundColor Yellow
-Write-Host "Note: You may need to authenticate with GitHub" -ForegroundColor Yellow
+Write-Host "Pushing to GitHub (main branch)..."
+Write-Host "This will overwrite any existing code on GitHub"
 git push -u origin main --force
 if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "Push failed. This might be due to:" -ForegroundColor Red
-    Write-Host "1. Authentication required - run: git push -u origin main --force" -ForegroundColor Yellow
-    Write-Host "2. Or use GitHub Desktop / Git Credential Manager" -ForegroundColor Yellow
+    Write-Host "Error: Failed to push to GitHub" -ForegroundColor Red
+    Write-Host "You may need to authenticate. Try running:" -ForegroundColor Yellow
+    Write-Host "  git push -u origin main --force" -ForegroundColor Yellow
     exit 1
 }
 
 Write-Host ""
-Write-Host "=== Done! ===" -ForegroundColor Green
-Write-Host "Repository uploaded to: $remoteUrl" -ForegroundColor Cyan
-
+Write-Host "========================================="
+Write-Host "Done! All code has been uploaded to GitHub" -ForegroundColor Green
+Write-Host "Repository: $remoteUrl" -ForegroundColor Green
+Write-Host "========================================="
