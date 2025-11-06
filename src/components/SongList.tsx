@@ -31,7 +31,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
   const durationCache = useRef<Map<string, number>>(new Map());
 
   const formatDuration = (seconds: number) => {
-    if (!seconds || seconds === 0) return '--:--';
+    if (!seconds || seconds === 0 || isNaN(seconds)) return '--:--';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
@@ -330,35 +330,8 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     sessionStorage.setItem('song_view_mode', viewMode);
   }, [viewMode]);
 
-  // Expand top-level folders by default
-  useEffect(() => {
-    if (expandedFolders.size === 0 && folderTree.subfolders.size > 0) {
-      const newExpanded = new Set<string>();
-      
-      // Check if "all music" folder exists
-      const allMusicFolder = Array.from(folderTree.subfolders.values())
-        .find(subfolder => {
-          const folderName = subfolder.name.toLowerCase();
-          return folderName.includes('all music') || folderName.includes('allmusic');
-        });
-      
-      // If "all music" exists, expand its contents instead
-      if (allMusicFolder) {
-        Array.from(allMusicFolder.subfolders.values()).forEach((folder: FolderNode) => {
-          newExpanded.add(folder.fullPath);
-        });
-      } else {
-        // Otherwise, expand all top-level folders (direct children of root)
-      Array.from(folderTree.subfolders.values()).forEach((folder: FolderNode) => {
-        newExpanded.add(folder.fullPath);
-      });
-      }
-      
-      if (newExpanded.size > 0) {
-        setExpandedFolders(newExpanded);
-      }
-    }
-  }, [folderTree, expandedFolders.size]);
+  // Don't expand folders by default - keep them collapsed
+  // User must click to open folders
 
   // Load song durations lazily
   useEffect(() => {
@@ -545,9 +518,10 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 </div>
               </div>
             )}
-            {/* Render expanded folder contents */}
+            {/* Render expanded folder contents - only show if folder is expanded */}
             {foldersToDisplay.map((subfolder) => {
               const isExpanded = expandedFolders.has(subfolder.fullPath);
+              // Don't render content if folder is not expanded
               if (!isExpanded) return null;
               
               return (
