@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, X, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Song } from "@/pages/Index";
@@ -34,6 +34,7 @@ const MusicPlayer = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
@@ -107,8 +108,8 @@ const MusicPlayer = ({
       
       // Refresh token if needed and build URL
       refreshTokenIfNeeded().then((accessToken) => {
-        let finalUrl = song.url;
-        if (isNetlify && accessToken) {
+    let finalUrl = song.url;
+    if (isNetlify && accessToken) {
           // Check if URL already has query parameters
           const separator = song.url.includes('?') ? '&' : '?';
           finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
@@ -153,7 +154,7 @@ const MusicPlayer = ({
     } else if (isNewSong && isPlaying && audio.readyState === 0) {
       // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet
       // Don't reset if audio is already loaded (normal pause/resume)
-      audio.currentTime = 0;
+    audio.currentTime = 0;
       setCurrentTime(0);
     }
     // If audio is already loaded and paused, keep current position (don't reset)
@@ -574,7 +575,11 @@ const MusicPlayer = ({
           <div className="flex items-center justify-between gap-4">
             {/* Song Info */}
             <div className="flex items-center gap-4 min-w-0 flex-1">
-              <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0 shadow-lg">
+              <div 
+                className="w-14 h-14 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0 shadow-lg cursor-pointer hover:scale-105 transition-transform"
+                onClick={() => setIsFullscreen(true)}
+                title="פתח במסך מלא"
+              >
                 {song.coverUrl ? (
                   <img
                     src={song.coverUrl}
@@ -702,6 +707,190 @@ const MusicPlayer = ({
           </div>
         </div>
       </div>
+
+      {/* Fullscreen Player Modal */}
+      {isFullscreen && (
+        <div 
+          className="fixed inset-0 bg-background z-[100] flex flex-col items-center justify-center p-4 md:p-8"
+          onClick={(e) => {
+            // Close on background click
+            if (e.target === e.currentTarget) {
+              setIsFullscreen(false);
+            }
+          }}
+        >
+          {/* Close Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsFullscreen(false)}
+            className="absolute top-4 right-4 md:top-8 md:right-8 z-10"
+            title="סגור"
+          >
+            <X className="w-6 h-6" />
+          </Button>
+
+          <div className="w-full max-w-4xl flex flex-col items-center gap-6 md:gap-8">
+            {/* Album Art - Large */}
+            <div className="w-full max-w-md aspect-square rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shadow-2xl overflow-hidden">
+              {song.coverUrl ? (
+                <img
+                  src={song.coverUrl}
+                  alt={song.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-8xl md:text-9xl">🎵</span>
+              )}
+            </div>
+
+            {/* Song Info */}
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl md:text-4xl font-bold text-foreground">
+                {song.title}
+              </h2>
+              <p className="text-lg md:text-xl text-muted-foreground">
+                {song.artist}
+              </p>
+              {selectedSpeaker && (
+                <p className="text-sm md:text-base text-primary flex items-center justify-center gap-2 mt-2">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  מנגן ב-{selectedSpeaker}
+                </p>
+              )}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full max-w-2xl space-y-2">
+              <Slider
+                value={[currentTime]}
+                max={duration || 100}
+                step={1}
+                onValueChange={handleSeek}
+                className="w-full cursor-pointer"
+                disabled={duration === 0 || isLoading}
+              />
+              <div className="flex justify-between text-sm md:text-base text-muted-foreground">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration || song.duration)}</span>
+              </div>
+              {(isLoading || isBuffering) && (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">
+                    {isLoading ? 'טוען...' : 'מוריד...'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-col items-center gap-6 w-full">
+              {/* Main Controls */}
+              <div className="flex items-center gap-4 md:gap-6">
+                {onRepeatModeChange && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRepeatModeClick}
+                    className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                    title={
+                      repeatMode === 'none' ? 'לא חוזר' :
+                      repeatMode === 'one' ? 'חוזר על שיר אחד' :
+                      'חוזר על כל השירים'
+                    }
+                  >
+                    {repeatMode === 'none' && (
+                      <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    {repeatMode === 'one' && (
+                      <svg className="w-5 h-5 md:w-6 md:h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        <text x="12" y="16" textAnchor="middle" fontSize="8" fill="currentColor">1</text>
+                      </svg>
+                    )}
+                    {repeatMode === 'all' && (
+                      <svg className="w-5 h-5 md:w-6 md:h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onPrevious}
+                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                >
+                  <SkipBack className="w-5 h-5 md:w-6 md:h-6" />
+                </Button>
+                <Button
+                  variant="default"
+                  size="icon"
+                  onClick={onPlayPause}
+                  className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 transition-all shadow-[var(--shadow-player)]"
+                  disabled={isLoading && !isPlaying}
+                >
+                  {(isLoading && !isPlaying) ? (
+                    <Loader2 className="w-8 h-8 md:w-10 md:h-10 animate-spin" />
+                  ) : isPlaying ? (
+                    <Pause className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" />
+                  ) : (
+                    <Play className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" />
+                  )}
+                </Button>
+                {onStop && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onStop}
+                    className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                    title="עצירה לגמרי"
+                  >
+                    <Square className="w-5 h-5 md:w-6 md:h-6" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onNext}
+                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                >
+                  <SkipForward className="w-5 h-5 md:w-6 md:h-6" />
+                </Button>
+              </div>
+
+              {/* Volume Control */}
+              <div className="flex items-center gap-3 md:gap-4 w-full max-w-xs">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                >
+                  {isMuted ? (
+                    <VolumeX className="w-5 h-5 md:w-6 md:h-6" />
+                  ) : (
+                    <Volume2 className="w-5 h-5 md:w-6 md:h-6" />
+                  )}
+                </Button>
+                <Slider
+                  value={[volume]}
+                  max={100}
+                  step={1}
+                  onValueChange={(v) => setVolume(v[0])}
+                  className="flex-1 cursor-pointer"
+                />
+                <span className="text-sm md:text-base text-muted-foreground w-12 text-center">
+                  {volume}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
