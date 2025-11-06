@@ -38,10 +38,14 @@ const MusicPlayer = ({
     if (!audioRef.current || !song.url) return;
 
     const audio = audioRef.current;
-    setIsLoading(true);
-    setIsBuffering(false);
-    setDuration(0);
-    setCurrentTime(0);
+    // Only set loading if it's a new song (not resuming)
+    const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+    if (!savedPosition) {
+      setIsLoading(true);
+      setIsBuffering(false);
+      setDuration(0);
+      setCurrentTime(0);
+    }
     
     // Build URL with token if needed
     const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
@@ -130,6 +134,18 @@ const MusicPlayer = ({
             audio.addEventListener('loadedmetadata', handleMetadataLoad);
           }
         }
+      }
+      
+      // If audio is already loaded and paused, try to play immediately (resume)
+      if (audio.readyState >= 2 && audio.paused) {
+        // Audio is already loaded, just resume playback
+        audio.play().then(() => {
+          setIsLoading(false);
+        }).catch(err => {
+          console.error('Play error:', err);
+          setIsLoading(false);
+        });
+        return; // Don't continue with tryPlay logic
       }
       
       // Wait for enough data before playing to prevent stuttering

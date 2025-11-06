@@ -544,25 +544,20 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
 
         return (
           <>
-            {/* Render top-level folders with their contents directly below */}
+            {/* Render top-level folders as grid - horizontally */}
             {foldersToDisplay.length > 0 && (
               <div className="mb-8">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                  {foldersToDisplay.map((subfolder) => renderFolderCard(subfolder))}
+                </div>
+                {/* Render expanded folder contents - directly below each folder */}
                 {foldersToDisplay.map((subfolder) => {
                   const isExpanded = expandedFolders.has(subfolder.fullPath);
+                  if (!isExpanded) return null;
+                  
                   return (
-                    <div key={subfolder.fullPath} className="mb-6">
-                      {/* Folder Card - in grid */}
-                      <div className="mb-2">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                          {renderFolderCard(subfolder)}
-                        </div>
-                      </div>
-                      {/* Folder Contents - directly below the folder card */}
-                      {isExpanded && (
-                        <div className="mt-2 mb-4">
-                          {renderFolderContents(subfolder)}
-                        </div>
-                      )}
+                    <div key={`${subfolder.fullPath}-contents`} className="mt-2 mb-4">
+                      {renderFolderContents(subfolder)}
                     </div>
                   );
                 })}
