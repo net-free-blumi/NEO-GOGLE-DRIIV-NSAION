@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 
 interface ExternalSpeakerState {
   type: 'Chromecast' | 'AirPlay' | 'DLNA' | 'Sonos' | 'Bluetooth' | 'Browser' | null;
@@ -31,11 +31,11 @@ export const useExternalSpeaker = (selectedSpeaker: string | null, speakers: any
     return speakers.find((s: any) => s.id === selectedSpeaker);
   };
 
-  // Check if external speaker is active
-  const isExternalSpeakerActive = (() => {
+  // Check if external speaker is active (reactive)
+  const isExternalSpeakerActive = useMemo(() => {
     const speaker = getSpeakerInfo();
     return speaker && speaker.type !== 'Browser';
-  })();
+  }, [selectedSpeaker, speakers]);
 
   // Get current external speaker state
   const getExternalSpeakerState = () => {

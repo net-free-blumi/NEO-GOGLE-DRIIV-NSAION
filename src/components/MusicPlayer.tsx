@@ -36,6 +36,22 @@ const MusicPlayer = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Get speakers list from sessionStorage
+  const [speakers] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('available_speakers');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  
+  // Use external speaker hook
+  const { isExternalSpeakerActive, controlExternalSpeaker, stopLocalAudio } = useExternalSpeaker(
+    selectedSpeaker,
+    speakers
+  );
 
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
