@@ -66,7 +66,7 @@ exports.handler = async (event) => {
     
     // Parse range header to get start and end
     let start = 0;
-    let end = 1048575; // 1MB - 1 (default chunk size)
+    let end = null; // No end limit - let Google Drive handle it
     
     if (rangeHeader) {
       const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
@@ -74,20 +74,19 @@ exports.handler = async (event) => {
         start = parseInt(match[1], 10);
         if (match[2]) {
           end = parseInt(match[2], 10);
-        } else {
-          // If no end specified, use 1MB chunk
-          end = start + 1048575; // 1MB
         }
+        // If no end specified, don't set it - let Google Drive stream the rest
       }
     }
     
-    // Limit chunk size to 1MB to avoid size limits
-    const chunkSize = end - start + 1;
-    if (chunkSize > 1048576) {
-      end = start + 1048575; // Limit to 1MB
+    // Set Range header if we have a range request
+    if (rangeHeader) {
+      if (end !== null) {
+        fetchHeaders['Range'] = `bytes=${start}-${end}`;
+      } else {
+        fetchHeaders['Range'] = `bytes=${start}-`;
+      }
     }
-    
-    fetchHeaders['Range'] = `bytes=${start}-${end}`;
 
     const driveRes = await fetch(driveUrl, { headers: fetchHeaders });
 
@@ -103,16 +102,18 @@ exports.handler = async (event) => {
       };
     }
 
-    // Get response body (should be a small chunk)
+    // Get response body as stream
+    // For large files, we need to handle streaming properly
     const arrayBuffer = await driveRes.arrayBuffer();
     const actualChunkSize = arrayBuffer.byteLength;
     
-    // Double check chunk size (max 1MB)
-    const MAX_CHUNK_SIZE = 1048576; // 1MB
-    if (actualChunkSize > MAX_CHUNK_SIZE) {
+    // Check if response is too large (Netlify limit is 6MB for response body)
+    const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB to be safe
+    if (actualChunkSize > MAX_RESPONSE_SIZE) {
+      // If too large, return error or handle differently
       return {
         statusCode: 413,
-        body: JSON.stringify({ error: 'Chunk too large' }),
+        body: JSON.stringify({ error: 'File chunk too large for Netlify function' }),
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
@@ -130,7 +131,7 @@ exports.handler = async (event) => {
       }
     }
     
-    // Convert to base64
+    // Convert to base64 for Netlify
     const base64 = Buffer.from(arrayBuffer).toString('base64');
 
     // Prepare response headers
@@ -144,16 +145,18 @@ exports.handler = async (event) => {
       'Content-Length': actualChunkSize.toString(),
     };
 
-    // Set Content-Range header with actual chunk size
-    const actualEnd = start + actualChunkSize - 1;
-    if (totalSize !== null) {
-      responseHeaders['Content-Range'] = `bytes ${start}-${actualEnd}/${totalSize}`;
-    } else {
-      responseHeaders['Content-Range'] = `bytes ${start}-${actualEnd}/*`;
+    // Set Content-Range header if we have range info
+    if (rangeHeader || contentRangeHeader) {
+      const actualEnd = start + actualChunkSize - 1;
+      if (totalSize !== null) {
+        responseHeaders['Content-Range'] = `bytes ${start}-${actualEnd}/${totalSize}`;
+      } else {
+        responseHeaders['Content-Range'] = `bytes ${start}-${actualEnd}/*`;
+      }
     }
 
-    // Always return 206 for range requests
-    const statusCode = 206;
+    // Return 206 for range requests, 200 for full file
+    const statusCode = rangeHeader ? 206 : 200;
 
     return {
       statusCode,
