@@ -76,6 +76,7 @@ const MusicPlayer = ({
     audio.src = finalUrl;
     
     // Restore saved position if exists (for resume after pause)
+    // Don't reset position if audio is already loaded and paused (normal pause, not new song)
     if (savedPosition) {
       const position = parseFloat(savedPosition);
       if (!isNaN(position) && position > 0) {
@@ -95,10 +96,13 @@ const MusicPlayer = ({
           audio.addEventListener('loadedmetadata', handleMetadataLoad);
         }
       }
-    } else {
-    audio.currentTime = 0;
+    } else if (isNewSong || (audio.readyState === 0 && isPlaying)) {
+      // Only reset to 0 if it's a new song or audio hasn't loaded yet
+      // Don't reset if audio is already loaded and paused (normal pause)
+      audio.currentTime = 0;
       setCurrentTime(0);
     }
+    // If audio is already loaded and paused, keep current position (don't reset)
     
     // Set up streaming optimization
     audio.setAttribute('preload', 'none');
@@ -114,6 +118,17 @@ const MusicPlayer = ({
     if (!audioRef.current) return;
     
     const audio = audioRef.current;
+    
+    // Save position before any state changes
+    const saveCurrentPosition = () => {
+      if (audio.readyState > 0 && !audio.paused) {
+        // Save position while playing (before pause)
+        const position = audio.currentTime || currentTime || 0;
+        if (position > 0) {
+          sessionStorage.setItem(`song_position_${song.id}`, position.toString());
+        }
+      }
+    };
     
     if (isPlaying) {
       // Ensure audio is loaded before playing
@@ -270,9 +285,22 @@ const MusicPlayer = ({
         audio.currentTime = 0;
         setCurrentTime(0);
       } else if (audio.readyState > 0) {
-        // Normal pause - save current position
-        const position = audio.currentTime;
-        sessionStorage.setItem(`song_position_${song.id}`, position.toString());
+        // Normal pause - save current position BEFORE pausing
+        // Use currentTime from audio element first (most accurate), then from state
+        const audioPosition = audio.currentTime || 0;
+        const statePosition = currentTime || 0;
+        // Use the larger value (more accurate) or audio position if available
+        const position = audioPosition > 0 ? audioPosition : (statePosition > 0 ? statePosition : 0);
+        if (position > 0) {
+          sessionStorage.setItem(`song_position_${song.id}`, position.toString());
+          console.log(`Saved position for pause: ${position} seconds (audio: ${audioPosition}, state: ${statePosition})`);
+        } else {
+          // If both are 0, try to get from state one more time
+          if (statePosition > 0) {
+            sessionStorage.setItem(`song_position_${song.id}`, statePosition.toString());
+            console.log(`Saved position from state for pause: ${statePosition} seconds`);
+          }
+        }
       }
       // Don't set isLoading to true when pausing - allow user to resume
       setIsLoading(false); // Make sure loading is false when pausing
