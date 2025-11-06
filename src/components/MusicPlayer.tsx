@@ -171,13 +171,13 @@ const MusicPlayer = ({
       
       tryPlay();
     } else {
-      // When pausing, show loading state and save current position
+      // When pausing, save current position but don't show loading state
       if (audio.readyState > 0) {
         // Save current position to sessionStorage
         const position = audio.currentTime;
         sessionStorage.setItem(`song_position_${song.id}`, position.toString());
       }
-      setIsLoading(true);
+      // Don't set isLoading to true when pausing - allow user to resume
       audio.pause();
     }
   }, [isPlaying]);
@@ -450,9 +450,9 @@ const MusicPlayer = ({
                 size="icon"
                 onClick={onPlayPause}
                 className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 transition-all shadow-[var(--shadow-player)]"
-                disabled={isLoading}
+                disabled={isLoading && !isPlaying}
               >
-                {isLoading ? (
+                {(isLoading && !isPlaying) ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
                 ) : isPlaying ? (
                   <Pause className="w-6 h-6" fill="currentColor" />
