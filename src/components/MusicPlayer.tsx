@@ -40,13 +40,20 @@ const MusicPlayer = ({
     if (!audioRef.current || !song.url) return;
 
     const audio = audioRef.current;
-    // Only set loading if it's a new song (not resuming)
+    // Only set loading if it's a new song (not resuming) AND we're playing
+    // Don't set loading when pausing/stopping
     const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
-    if (!savedPosition) {
-    setIsLoading(true);
-    setIsBuffering(false);
-    setDuration(0);
-    setCurrentTime(0);
+    const isNewSong = !savedPosition && audio.readyState === 0; // New song = no saved position AND audio not loaded yet
+    
+    if (isNewSong && isPlaying) {
+      // Only show loading when starting a new song that's actually playing
+      setIsLoading(true);
+      setIsBuffering(false);
+      setDuration(0);
+      setCurrentTime(0);
+    } else if (!isPlaying) {
+      // When pausing/stopping, don't show loading
+      setIsLoading(false);
     }
     
     // Build URL with token if needed
@@ -214,6 +221,7 @@ const MusicPlayer = ({
         sessionStorage.setItem(`song_position_${song.id}`, position.toString());
       }
       // Don't set isLoading to true when pausing - allow user to resume
+      setIsLoading(false); // Make sure loading is false when pausing
       audio.pause();
     }
   }, [isPlaying, song.id]);
@@ -229,6 +237,7 @@ const MusicPlayer = ({
     if (savedPosition === null && !isPlaying && audio.readyState > 0) {
       audio.currentTime = 0;
       setCurrentTime(0);
+      setIsLoading(false); // Make sure loading is false when stopping
     }
   }, [isPlaying, song.id]);
 
