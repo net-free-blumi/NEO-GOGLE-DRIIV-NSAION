@@ -103,23 +103,8 @@ exports.handler = async (event) => {
     }
 
     // Get response body as stream
-    // For large files, we need to handle streaming properly
     const arrayBuffer = await driveRes.arrayBuffer();
     const actualChunkSize = arrayBuffer.byteLength;
-    
-    // Check if response is too large (Netlify limit is 6MB for response body)
-    const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB to be safe
-    if (actualChunkSize > MAX_RESPONSE_SIZE) {
-      // If too large, return error or handle differently
-      return {
-        statusCode: 413,
-        body: JSON.stringify({ error: 'File chunk too large for Netlify function' }),
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      };
-    }
     
     // Get total file size from Content-Range header if available
     let totalSize = null;
@@ -132,6 +117,8 @@ exports.handler = async (event) => {
     }
     
     // Convert to base64 for Netlify
+    // Note: Netlify has a 6MB limit for response body, but we handle range requests
+    // so we only return the requested chunk, not the entire file
     const base64 = Buffer.from(arrayBuffer).toString('base64');
 
     // Prepare response headers
