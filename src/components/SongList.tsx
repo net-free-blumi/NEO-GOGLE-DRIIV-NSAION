@@ -1,0 +1,519 @@
+import { Play, Pause, Folder, ChevronRight, ChevronDown, Grid3x3, List, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Song } from "@/pages/Index";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useState, useMemo, useEffect } from "react";
+
+interface SongListProps {
+  songs: Song[];
+  currentSong: Song | null;
+  onSongSelect: (song: Song) => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+}
+
+interface FolderNode {
+  name: string;
+  fullPath: string;
+  songs: Song[];
+  subfolders: Map<string, FolderNode>;
+}
+
+type ViewMode = 'grid' | 'list';
+
+const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }: SongListProps) => {
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = sessionStorage.getItem('song_view_mode') as ViewMode | null;
+    return stored === 'grid' || stored === 'list' ? stored : 'grid';
+  });
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || seconds === 0) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const formatFileSize = (bytes?: string) => {
+    if (!bytes) return '';
+    const size = parseInt(bytes);
+    if (isNaN(size)) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
+
+  // Build folder tree structure
+  const folderTree = useMemo(() => {
+    const root: FolderNode = {
+      name: '',
+      fullPath: '',
+      songs: [],
+      subfolders: new Map(),
+    };
+
+    songs.forEach(song => {
+      const path = song.folderPath || '';
+      if (!path) {
+        root.songs.push(song);
+        return;
+      }
+
+      // Split path by " / " to get folder hierarchy
+      const parts = path.split(' / ').filter(p => p);
+      let current = root;
+
+      parts.forEach((part, index) => {
+        if (!current.subfolders.has(part)) {
+          const fullPath = parts.slice(0, index + 1).join(' / ');
+          current.subfolders.set(part, {
+            name: part,
+            fullPath,
+            songs: [],
+            subfolders: new Map(),
+          });
+        }
+        current = current.subfolders.get(part)!;
+      });
+
+      current.songs.push(song);
+    });
+
+    return root;
+  }, [songs]);
+
+  const toggleFolder = (path: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(path)) {
+      newExpanded.delete(path);
+    } else {
+      newExpanded.add(path);
+    }
+    setExpandedFolders(newExpanded);
+  };
+
+  // Render folder recursively
+  const renderFolder = (folder: FolderNode, level: number = 0) => {
+    const hasContent = folder.songs.length > 0 || folder.subfolders.size > 0;
+    if (!hasContent) return null;
+
+    const isExpanded = expandedFolders.has(folder.fullPath);
+    const indentStyle = level > 0 ? { marginRight: `${level * 1}rem` } : {};
+
+    return (
+      <div key={folder.fullPath || 'root'} style={indentStyle}>
+        {folder.name && (
+          <Collapsible
+            open={isExpanded}
+            onOpenChange={() => toggleFolder(folder.fullPath)}
+          >
+            <CollapsibleTrigger asChild>
+              <div className="p-3 sm:p-4 hover:bg-secondary/30 cursor-pointer transition-colors flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  <Folder className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">
+                      {folder.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {folder.songs.length} שירים
+                      {folder.subfolders.size > 0 && ` • ${folder.subfolders.size} תיקיות`}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </span>
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="border-r-2 border-border/50 mr-4 sm:mr-6">
+                {/* Render subfolders first */}
+                {Array.from(folder.subfolders.values())
+                  .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                  .map(subfolder => renderFolder(subfolder, level + 1))}
+                
+                {/* Render songs in this folder */}
+                {folder.songs.length > 0 && (
+                  <div className="divide-y divide-border/50">
+                    {folder.songs.map((song, index) => {
+                      const isCurrentSong = currentSong?.id === song.id;
+                      return (
+                        <div
+                          key={song.id}
+                          className={`group flex items-center gap-2 sm:gap-4 p-2 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+                            isCurrentSong ? "bg-secondary/70" : ""
+                          }`}
+                          onClick={() => onSongSelect(song)}
+                        >
+                          {/* Index / Play Button */}
+                          <div className="w-6 sm:w-8 text-center flex-shrink-0">
+                            {isCurrentSong ? (
+                              <div className="flex items-center justify-center">
+                                <div className="w-3 sm:w-4 flex gap-0.5 items-end">
+                                  <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_infinite] h-2 sm:h-3" />
+                                  <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.1s_infinite] h-3 sm:h-4" />
+                                  <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.2s_infinite] h-1.5 sm:h-2" />
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground group-hover:hidden text-xs">
+                                {index + 1}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`w-6 h-6 sm:w-8 sm:h-8 hidden group-hover:inline-flex ${
+                                isCurrentSong ? "inline-flex" : ""
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSongSelect(song);
+                              }}
+                            >
+                              {isCurrentSong ? (
+                                <Pause className="w-3 h-3 sm:w-4 sm:h-4" />
+                              ) : (
+                                <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                              )}
+                            </Button>
+                          </div>
+
+                          {/* Album Art */}
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                            {song.coverUrl ? (
+                              <img
+                                src={song.coverUrl}
+                                alt={song.title}
+                                className="w-full h-full rounded-lg object-cover"
+                              />
+                            ) : (
+                              <span className="text-lg sm:text-xl">🎵</span>
+                            )}
+                          </div>
+
+                          {/* Song Info */}
+                          <div className="flex-1 min-w-0">
+                            <h3
+                              className={`font-medium truncate text-sm sm:text-base ${
+                                isCurrentSong ? "text-primary" : "text-foreground"
+                              }`}
+                            >
+                              {song.title}
+                            </h3>
+                            <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground mt-0.5 sm:mt-1 flex-wrap">
+                              {song.artist && <span className="truncate">{song.artist}</span>}
+                              {song.fileSize && (
+                                <>
+                                  {song.artist && <span className="hidden sm:inline">•</span>}
+                                  <span className="hidden sm:inline">{formatFileSize(song.fileSize)}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Duration */}
+                          <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
+                            {formatDuration(song.duration)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+        
+        {/* Render root level songs if any */}
+        {!folder.name && folder.songs.length > 0 && (
+          <div className="divide-y divide-border/50">
+            {folder.songs.map((song, index) => {
+              const isCurrentSong = currentSong?.id === song.id;
+              return (
+                <div
+                  key={song.id}
+                  className={`group flex items-center gap-2 sm:gap-4 p-2 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+                    isCurrentSong ? "bg-secondary/70" : ""
+                  }`}
+                  onClick={() => onSongSelect(song)}
+                >
+                  <div className="w-6 sm:w-8 text-center flex-shrink-0">
+                    {isCurrentSong ? (
+                      <div className="flex items-center justify-center">
+                        <div className="w-3 sm:w-4 flex gap-0.5 items-end">
+                          <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_infinite] h-2 sm:h-3" />
+                          <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.1s_infinite] h-3 sm:h-4" />
+                          <span className="w-0.5 sm:w-1 bg-primary animate-[wave_0.8s_ease-in-out_0.2s_infinite] h-1.5 sm:h-2" />
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground group-hover:hidden text-xs">
+                        {index + 1}
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`w-6 h-6 sm:w-8 sm:h-8 hidden group-hover:inline-flex ${
+                        isCurrentSong ? "inline-flex" : ""
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSongSelect(song);
+                      }}
+                    >
+                      {isCurrentSong ? (
+                        <Pause className="w-3 h-3 sm:w-4 sm:h-4" />
+                      ) : (
+                        <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                    {song.coverUrl ? (
+                      <img src={song.coverUrl} alt={song.title} className="w-full h-full rounded-lg object-cover" />
+                    ) : (
+                      <span className="text-lg sm:text-xl">🎵</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`font-medium truncate text-sm sm:text-base ${isCurrentSong ? "text-primary" : "text-foreground"}`}>
+                      {song.title}
+                    </h3>
+                    <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground mt-0.5 sm:mt-1 flex-wrap">
+                      {song.artist && <span className="truncate">{song.artist}</span>}
+                    </div>
+                  </div>
+                  <div className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
+                    {formatDuration(song.duration)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Save view mode to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('song_view_mode', viewMode);
+  }, [viewMode]);
+
+  // Expand root by default on mount
+  useEffect(() => {
+    if (expandedFolders.size === 0 && folderTree.subfolders.size > 0) {
+      const newExpanded = new Set<string>();
+      Array.from(folderTree.subfolders.values()).forEach((folder: FolderNode) => {
+        newExpanded.add(folder.fullPath);
+      });
+      if (newExpanded.size > 0) {
+        setExpandedFolders(newExpanded);
+      }
+    }
+  }, [folderTree, expandedFolders.size]);
+
+  // Get all songs from all folders for grid view
+  const allSongs = useMemo(() => {
+    const collectSongs = (folder: FolderNode): Song[] => {
+      const result: Song[] = [...folder.songs];
+      folder.subfolders.forEach(subfolder => {
+        result.push(...collectSongs(subfolder));
+      });
+      return result;
+    };
+    return collectSongs(folderTree);
+  }, [folderTree]);
+
+  // Render grid view
+  const renderGridView = () => {
+    // Group songs by folder
+    const songsByFolder = new Map<string, Song[]>();
+    allSongs.forEach(song => {
+      const folderPath = song.folderPath || 'ללא תיקייה';
+      if (!songsByFolder.has(folderPath)) {
+        songsByFolder.set(folderPath, []);
+      }
+      songsByFolder.get(folderPath)!.push(song);
+    });
+
+    return (
+      <div className="p-4 sm:p-6">
+        {Array.from(songsByFolder.entries())
+          .sort(([a], [b]) => a.localeCompare(b, 'he-IL'))
+          .map(([folderPath, folderSongs]) => (
+            <div key={folderPath} className="mb-8 last:mb-0">
+              {folderPath !== 'ללא תיקייה' && (
+                <div className="flex items-center gap-2 mb-4">
+                  <Folder className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold">{folderPath}</h3>
+                  <span className="text-sm text-muted-foreground">({folderSongs.length} שירים)</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                {folderSongs.map((song) => {
+                  const isCurrentSong = currentSong?.id === song.id;
+                  return (
+                    <div
+                      key={song.id}
+                      className={`group relative bg-secondary/30 rounded-lg p-3 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+                        isCurrentSong ? "ring-2 ring-primary bg-secondary/70" : ""
+                      }`}
+                      onClick={() => onSongSelect(song)}
+                    >
+                      {/* Album Art / Cover */}
+                      <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20">
+                        {song.coverUrl ? (
+                          <img
+                            src={song.coverUrl}
+                            alt={song.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-4xl sm:text-5xl">🎵</span>
+                          </div>
+                        )}
+                        {/* Play Button Overlay */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-12 h-12 rounded-full bg-primary/90 hover:bg-primary text-primary-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSongSelect(song);
+                            }}
+                          >
+                            {isCurrentSong ? (
+                              <Pause className="w-6 h-6" />
+                            ) : (
+                              <Play className="w-6 h-6 ml-0.5" />
+                            )}
+                          </Button>
+                        </div>
+                        {/* Current Song Indicator */}
+                        {isCurrentSong && (
+                          <div className="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full animate-pulse" />
+                        )}
+                      </div>
+                      {/* Song Info */}
+                      <div className="min-w-0">
+                        <h4 className={`font-medium truncate text-sm sm:text-base ${
+                          isCurrentSong ? "text-primary" : "text-foreground"
+                        }`}>
+                          {song.title}
+                        </h4>
+                        {song.artist && (
+                          <p className="text-xs text-muted-foreground truncate mt-1">
+                            {song.artist}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatDuration(song.duration)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-card rounded-xl border border-border overflow-hidden shadow-[var(--shadow-card)]">
+      <div className="p-3 sm:p-4 border-b border-border bg-secondary/30">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg sm:text-xl font-semibold">השירים שלי</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              {songs.length} שירים
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* View Toggle */}
+            <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setViewMode('grid')}
+                title="תצוגת רשת"
+              >
+                <Grid3x3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setViewMode('list')}
+                title="תצוגת רשימה"
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
+            {/* Refresh Button */}
+            {onRefresh && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                title="רענון שירים"
+              >
+                {isRefreshing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-4 h-4"
+                  >
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                    <path d="M3 21v-5h5" />
+                  </svg>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {viewMode === 'grid' ? (
+        renderGridView()
+      ) : (
+        <div className="divide-y divide-border">
+          {Array.from(folderTree.subfolders.values())
+            .sort((a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, 'he-IL'))
+            .map((folder: FolderNode) => renderFolder(folder))}
+          {folderTree.songs.length > 0 && renderFolder(folderTree)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SongList;
