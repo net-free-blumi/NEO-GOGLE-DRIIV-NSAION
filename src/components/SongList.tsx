@@ -149,13 +149,13 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="border-r-2 border-border/50 mr-4 sm:mr-6">
-                {/* Render subfolders first */}
+              <div className="border-r-2 border-border/50 mr-4 sm:mr-6 mt-2">
+                {/* Render subfolders first - directly below folder */}
                 {Array.from(folder.subfolders.values())
                   .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
                   .map(subfolder => renderFolder(subfolder, level + 1))}
                 
-                {/* Render songs in this folder */}
+                {/* Render songs in this folder - directly below subfolders */}
                 {folder.songs.length > 0 && (
                   <div className="divide-y divide-border/50">
                     {folder.songs.map((song, index) => {
@@ -462,9 +462,9 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               
               return (
                 <div key={subfolder.fullPath} className="mb-8">
-                  {/* Render subfolders as grid */}
+                  {/* Render subfolders as grid - directly below parent folder */}
                   {subfolder.subfolders.size > 0 && (
-                    <div className="mb-6">
+                    <div className="mb-6 mt-4">
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                         {Array.from(subfolder.subfolders.values())
                           .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
@@ -472,7 +472,13 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                       </div>
                     </div>
                   )}
-                  {/* Render expanded subfolders contents */}
+                  {/* Render songs in this folder - directly below subfolders */}
+                  {subfolder.songs.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                      {subfolder.songs.map((song) => renderSongCard(song))}
+                    </div>
+                  )}
+                  {/* Render expanded subfolders contents - nested properly */}
                   {Array.from(subfolder.subfolders.values())
                     .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
                     .map(subsubfolder => {
@@ -480,7 +486,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                       if (!isSubExpanded) return null;
                       
                       return (
-                        <div key={subsubfolder.fullPath} className="mb-6">
+                        <div key={subsubfolder.fullPath} className="mb-6 mt-4">
                           <div className="flex items-center gap-2 mb-4">
                             <Folder className="w-5 h-5 text-primary" />
                             <h3 className="text-lg font-semibold">{subsubfolder.name}</h3>
@@ -489,7 +495,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                               {subsubfolder.subfolders.size > 0 && `, ${subsubfolder.subfolders.size} תיקיות`})
                             </span>
                           </div>
-                          {/* Render nested subfolders as grid */}
+                          {/* Render nested subfolders as grid - directly below */}
                           {subsubfolder.subfolders.size > 0 && (
                             <div className="mb-4">
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
@@ -499,7 +505,13 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                               </div>
                             </div>
                           )}
-                          {/* Render expanded nested subfolders */}
+                          {/* Render songs in this subfolder - directly below */}
+                          {subsubfolder.songs.length > 0 && (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                              {subsubfolder.songs.map((song) => renderSongCard(song))}
+                            </div>
+                          )}
+                          {/* Render expanded nested subfolders - nested properly */}
                           {Array.from(subsubfolder.subfolders.values())
                             .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
                             .map(nestedFolder => {
@@ -507,7 +519,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                               if (!isNestedExpanded) return null;
                               
                               return (
-                                <div key={nestedFolder.fullPath} className="mb-4">
+                                <div key={nestedFolder.fullPath} className="mb-4 mt-4">
                                   <div className="flex items-center gap-2 mb-3">
                                     <Folder className="w-4 h-4 text-primary" />
                                     <h4 className="text-base font-semibold">{nestedFolder.name}</h4>
@@ -523,21 +535,9 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                                 </div>
                               );
                             })}
-                          {/* Render songs in this subfolder */}
-                          {subsubfolder.songs.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
-                              {subsubfolder.songs.map((song) => renderSongCard(song))}
-                            </div>
-                          )}
                         </div>
                       );
                     })}
-                  {/* Render songs in this folder */}
-                  {subfolder.songs.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
-                      {subfolder.songs.map((song) => renderSongCard(song))}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -656,9 +656,17 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 {song.artist}
               </p>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
-              {formatDuration(songDuration)}
-            </p>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1 flex-wrap">
+              {formatDuration(songDuration) !== '--:--' && (
+                <span>{formatDuration(songDuration)}</span>
+              )}
+              {song.fileSize && (
+                <>
+                  {formatDuration(songDuration) !== '--:--' && <span>•</span>}
+                  <span>{formatFileSize(song.fileSize)}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       );

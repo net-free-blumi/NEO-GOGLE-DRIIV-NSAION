@@ -81,7 +81,16 @@ const MusicPlayer = ({
       // Wait for enough data before playing to prevent stuttering
       const tryPlay = async () => {
         // Wait for at least some data to be buffered
-        if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or better
+        // For better streaming, we want HAVE_FUTURE_DATA (readyState >= 3)
+        if (audio.readyState >= 3) { // HAVE_FUTURE_DATA - best for streaming
+          try {
+            await audio.play();
+            setIsLoading(false);
+          } catch (err) {
+            console.error('Play error:', err);
+            setIsLoading(false);
+          }
+        } else if (audio.readyState >= 2) { // HAVE_CURRENT_DATA - acceptable
           try {
             await audio.play();
             setIsLoading(false);
@@ -94,7 +103,12 @@ const MusicPlayer = ({
           const maxRetries = 50; // 5 seconds max wait
           let retries = 0;
           const checkAndPlay = () => {
-            if (audio.readyState >= 2) {
+            if (audio.readyState >= 3) { // Prefer HAVE_FUTURE_DATA
+              audio.play().catch(err => {
+                console.error('Play error:', err);
+                setIsLoading(false);
+              });
+            } else if (audio.readyState >= 2) { // Accept HAVE_CURRENT_DATA
               audio.play().catch(err => {
                 console.error('Play error:', err);
                 setIsLoading(false);
@@ -161,13 +175,22 @@ const MusicPlayer = ({
       // Update buffering state based on readyState and buffered amount
       const buffered = audio.buffered;
       const currentTime = audio.currentTime;
+      const duration = audio.duration || 0;
       
       // Check if we have enough buffered data ahead
+      // For long songs (over 1 hour), we need more buffer
+      let requiredBuffer = 3; // Default 3 seconds
+      if (duration > 3600) { // Over 1 hour
+        requiredBuffer = 10; // Need 10 seconds for long songs
+      } else if (duration > 1800) { // Over 30 minutes
+        requiredBuffer = 5; // Need 5 seconds for medium songs
+      }
+      
       let hasEnoughBuffer = false;
       if (buffered.length > 0) {
         const bufferedEnd = buffered.end(buffered.length - 1);
-        // Need at least 3 seconds of buffer ahead
-        hasEnoughBuffer = bufferedEnd - currentTime > 3;
+        // Need at least requiredBuffer seconds of buffer ahead
+        hasEnoughBuffer = bufferedEnd - currentTime > requiredBuffer;
       }
       
       if (audio.readyState >= 3 && hasEnoughBuffer) { // HAVE_FUTURE_DATA and enough buffer
