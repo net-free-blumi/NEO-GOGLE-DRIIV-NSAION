@@ -168,10 +168,10 @@ const MusicPlayer = ({
           audio.addEventListener('loadedmetadata', handleMetadataLoad);
         }
       }
-    } else if (isNewSong && isPlaying && audio.readyState === 0) {
-      // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet
-      // Don't reset if audio is already loaded (normal pause/resume)
-    audio.currentTime = 0;
+    } else if (isNewSong && isPlaying && audio.readyState === 0 && !savedPosition) {
+      // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet AND no saved position
+      // Don't reset if audio is already loaded (normal pause/resume) or if there's a saved position
+      audio.currentTime = 0;
       setCurrentTime(0);
     }
     // If audio is already loaded and paused, keep current position (don't reset)
@@ -257,19 +257,31 @@ const MusicPlayer = ({
         if (savedPosition) {
           const position = parseFloat(savedPosition);
           if (!isNaN(position) && position > 0) {
+            console.log(`Resuming from saved position: ${position} seconds`);
             // Set position immediately if duration is available
             if (audio.duration > 0 && position < audio.duration) {
+              // Set position multiple times to ensure it sticks
               audio.currentTime = position;
               setCurrentTime(position);
-              // Use a longer delay to ensure position is set before playing
+              // Verify position was set
               setTimeout(() => {
-                audio.play().then(() => {
-                  setIsLoading(false);
-                }).catch(err => {
-                  console.error('Play error:', err);
-                  setIsLoading(false);
-                });
-              }, 200); // Increased delay to ensure position is set
+                if (Math.abs(audio.currentTime - position) > 1) {
+                  // Position wasn't set correctly, try again
+                  console.log(`Position not set correctly, retrying. Current: ${audio.currentTime}, Target: ${position}`);
+                  audio.currentTime = position;
+                  setCurrentTime(position);
+                }
+                // Use a longer delay to ensure position is set before playing
+                setTimeout(() => {
+                  console.log(`Playing from position: ${audio.currentTime}`);
+                  audio.play().then(() => {
+                    setIsLoading(false);
+                  }).catch(err => {
+                    console.error('Play error:', err);
+                    setIsLoading(false);
+                  });
+                }, 100);
+              }, 50);
               return; // Don't continue
             } else {
               // Wait for duration to load, then set position and play
