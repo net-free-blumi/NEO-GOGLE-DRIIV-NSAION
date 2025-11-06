@@ -330,7 +330,19 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     sessionStorage.setItem('song_view_mode', viewMode);
   }, [viewMode]);
 
-  // Don't expand folders by default - keep them collapsed
+  // Expand top-level folders by default
+  useEffect(() => {
+    if (expandedFolders.size === 0 && folderTree.subfolders.size > 0) {
+      const newExpanded = new Set<string>();
+      // Expand all top-level folders (direct children of root)
+      Array.from(folderTree.subfolders.values()).forEach((folder: FolderNode) => {
+        newExpanded.add(folder.fullPath);
+      });
+      if (newExpanded.size > 0) {
+        setExpandedFolders(newExpanded);
+      }
+    }
+  }, [folderTree, expandedFolders.size]);
 
   // Load song durations lazily
   useEffect(() => {
@@ -505,18 +517,76 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               
               return (
                 <div key={subfolder.fullPath} className="mb-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Folder className="w-5 h-5 text-primary" />
-                    <h3 className="text-lg font-semibold">{subfolder.name}</h3>
-                    <span className="text-sm text-muted-foreground">
-                      ({subfolder.songs.length} שירים
-                      {subfolder.subfolders.size > 0 && `, ${subfolder.subfolders.size} תיקיות`})
-                    </span>
-                  </div>
-                  {/* Render subfolders recursively */}
+                  {/* Render subfolders as grid */}
+                  {subfolder.subfolders.size > 0 && (
+                    <div className="mb-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                        {Array.from(subfolder.subfolders.values())
+                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                          .map(subsubfolder => renderFolderCard(subsubfolder))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Render expanded subfolders contents */}
                   {Array.from(subfolder.subfolders.values())
                     .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                    .map(subsubfolder => renderFolderGrid(subsubfolder, level + 2))}
+                    .map(subsubfolder => {
+                      const isSubExpanded = expandedFolders.has(subsubfolder.fullPath);
+                      if (!isSubExpanded) return null;
+                      
+                      return (
+                        <div key={subsubfolder.fullPath} className="mb-6">
+                          <div className="flex items-center gap-2 mb-4">
+                            <Folder className="w-5 h-5 text-primary" />
+                            <h3 className="text-lg font-semibold">{subsubfolder.name}</h3>
+                            <span className="text-sm text-muted-foreground">
+                              ({subsubfolder.songs.length} שירים
+                              {subsubfolder.subfolders.size > 0 && `, ${subsubfolder.subfolders.size} תיקיות`})
+                            </span>
+                          </div>
+                          {/* Render nested subfolders as grid */}
+                          {subsubfolder.subfolders.size > 0 && (
+                            <div className="mb-4">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                                {Array.from(subsubfolder.subfolders.values())
+                                  .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                                  .map(nestedFolder => renderFolderCard(nestedFolder))}
+                              </div>
+                            </div>
+                          )}
+                          {/* Render expanded nested subfolders */}
+                          {Array.from(subsubfolder.subfolders.values())
+                            .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                            .map(nestedFolder => {
+                              const isNestedExpanded = expandedFolders.has(nestedFolder.fullPath);
+                              if (!isNestedExpanded) return null;
+                              
+                              return (
+                                <div key={nestedFolder.fullPath} className="mb-4">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Folder className="w-4 h-4 text-primary" />
+                                    <h4 className="text-base font-semibold">{nestedFolder.name}</h4>
+                                    <span className="text-xs text-muted-foreground">
+                                      ({nestedFolder.songs.length} שירים)
+                                    </span>
+                                  </div>
+                                  {nestedFolder.songs.length > 0 && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                                      {nestedFolder.songs.map((song) => renderSongCard(song))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          {/* Render songs in this subfolder */}
+                          {subsubfolder.songs.length > 0 && (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                              {subsubfolder.songs.map((song) => renderSongCard(song))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   {/* Render songs in this folder */}
                   {subfolder.songs.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
