@@ -213,22 +213,22 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 pb-24 sm:pb-32">
         {songs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center animate-pulse">
-              <Music className="w-12 h-12 text-primary" />
+          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 sm:gap-6 px-2">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center animate-pulse">
+              <Music className="w-10 h-10 sm:w-12 sm:h-12 text-primary" />
             </div>
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-bold">ברוכים הבאים ל-CloudTunes</h2>
-              <p className="text-muted-foreground max-w-md">
+            <div className="text-center space-y-2 px-4">
+              <h2 className="text-2xl sm:text-3xl font-bold">ברוכים הבאים ל-CloudTunes</h2>
+              <p className="text-sm sm:text-base text-muted-foreground max-w-md">
                 חבר את Google Drive שלך כדי להתחיל לנגן את המוזיקה שלך
               </p>
             </div>
             <GoogleDriveConnect onSongsLoaded={setSongs} />
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-8">
+          <div className="grid grid-cols-1 gap-4 sm:gap-8">
             <SongList
               songs={filteredSongs}
               currentSong={currentSong}

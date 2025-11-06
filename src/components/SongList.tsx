@@ -103,8 +103,13 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
   const toggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(path)) {
+      // If folder is already open, close it
       newExpanded.delete(path);
     } else {
+      // If opening a new folder, close all others and open only this one
+      // Close all currently open folders
+      newExpanded.clear();
+      // Open only this folder
       newExpanded.add(path);
     }
     setExpandedFolders(newExpanded);
@@ -371,7 +376,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
 
   // Render grid view with collapsible folders
   const renderGridView = () => {
-    // Render folder card for grid view
+    // Render folder card for grid view with collapsible content
     const renderFolderCard = (folder: FolderNode) => {
       const isExpanded = expandedFolders.has(folder.fullPath);
       const totalSongs = (() => {
@@ -386,34 +391,60 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       })();
 
       return (
-        <div
-          key={folder.fullPath}
-          className="group relative bg-secondary/30 rounded-lg p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50"
-          onClick={() => toggleFolder(folder.fullPath)}
-        >
-          {/* Folder Icon */}
-          <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-            <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
-            {/* Expand/Collapse Indicator */}
-            <div className="absolute top-2 right-2">
-              {isExpanded ? (
-                <ChevronDown className="w-5 h-5 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="w-5 h-5 text-muted-foreground" />
-              )}
-            </div>
-          </div>
-          {/* Folder Info */}
-          <div className="min-w-0">
-            <h4 className="font-medium truncate text-sm sm:text-base text-foreground">
-              {folder.name}
-            </h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              {totalSongs} שירים
-              {folder.subfolders.size > 0 && ` • ${folder.subfolders.size} תיקיות`}
-            </p>
-          </div>
-        </div>
+        <>
+          <Collapsible
+            key={folder.fullPath}
+            open={isExpanded}
+            onOpenChange={() => toggleFolder(folder.fullPath)}
+          >
+            <CollapsibleTrigger asChild>
+              <div className="group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50 w-full h-full">
+                {/* Folder Icon */}
+                <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                  <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
+                  {/* Expand/Collapse Indicator */}
+                  <div className="absolute top-2 right-2">
+                    {isExpanded ? (
+                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </div>
+                </div>
+                {/* Folder Info */}
+                <div className="min-w-0">
+                  <h4 className="font-medium truncate text-sm sm:text-base text-foreground">
+                    {folder.name}
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {totalSongs} שירים
+                    {folder.subfolders.size > 0 && ` • ${folder.subfolders.size} תיקיות`}
+                  </p>
+                </div>
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="col-span-full mt-4">
+              <div>
+                {/* Render subfolders as grid - directly below parent folder */}
+                {folder.subfolders.size > 0 && (
+                  <div className="mb-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                      {Array.from(folder.subfolders.values())
+                        .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                        .map(subsubfolder => renderFolderCard(subsubfolder))}
+                    </div>
+                  </div>
+                )}
+                {/* Render songs in this folder - directly below subfolders */}
+                {folder.songs.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
+                    {folder.songs.map((song) => renderSongCard(song))}
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </>
       );
     };
 
@@ -449,98 +480,74 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
             {/* Render top-level folders as grid */}
             {foldersToDisplay.length > 0 && (
               <div className="mb-8">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                  {foldersToDisplay.map((subfolder) => renderFolderCard(subfolder))}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                  {foldersToDisplay.map((subfolder) => {
+                    const isExpanded = expandedFolders.has(subfolder.fullPath);
+                    return (
+                      <Collapsible
+                        key={subfolder.fullPath}
+                        open={isExpanded}
+                        onOpenChange={() => toggleFolder(subfolder.fullPath)}
+                      >
+                        <CollapsibleTrigger asChild>
+                          <div className="group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50 w-full h-full">
+                            {/* Folder Icon */}
+                            <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                              <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
+                              {/* Expand/Collapse Indicator */}
+                              <div className="absolute top-2 right-2">
+                                {isExpanded ? (
+                                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                                )}
+                              </div>
+                            </div>
+                            {/* Folder Info */}
+                            <div className="min-w-0">
+                              <h4 className="font-medium truncate text-sm sm:text-base text-foreground">
+                                {subfolder.name}
+                              </h4>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {(() => {
+                                  const countSongs = (f: FolderNode): number => {
+                                    let count = f.songs.length;
+                                    f.subfolders.forEach(sub => count += countSongs(sub));
+                                    return count;
+                                  };
+                                  return countSongs(subfolder);
+                                })()} שירים
+                                {subfolder.subfolders.size > 0 && ` • ${subfolder.subfolders.size} תיקיות`}
+                              </p>
+                            </div>
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="col-span-full mt-4">
+                          <div>
+                            {/* Render subfolders as grid - directly below parent folder */}
+                            {subfolder.subfolders.size > 0 && (
+                              <div className="mb-4">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                                  {Array.from(subfolder.subfolders.values())
+                                    .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                                    .map(subsubfolder => renderFolderCard(subsubfolder))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Render songs in this folder - directly below subfolders */}
+                            {subfolder.songs.length > 0 && (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
+                                {subfolder.songs.map((song) => renderSongCard(song))}
+                              </div>
+                            )}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  })}
                 </div>
               </div>
             )}
-            {/* Render expanded folder contents - only show if folder is expanded */}
-            {foldersToDisplay.map((subfolder) => {
-              const isExpanded = expandedFolders.has(subfolder.fullPath);
-              // Don't render content if folder is not expanded
-              if (!isExpanded) return null;
-              
-              return (
-                <div key={subfolder.fullPath} className="mb-8">
-                  {/* Render subfolders as grid - directly below parent folder */}
-                  {subfolder.subfolders.size > 0 && (
-                    <div className="mb-6 mt-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                        {Array.from(subfolder.subfolders.values())
-                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                          .map(subsubfolder => renderFolderCard(subsubfolder))}
-                      </div>
-                    </div>
-                  )}
-                  {/* Render songs in this folder - directly below subfolders */}
-                  {subfolder.songs.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
-                      {subfolder.songs.map((song) => renderSongCard(song))}
-                    </div>
-                  )}
-                  {/* Render expanded subfolders contents - nested properly */}
-                  {Array.from(subfolder.subfolders.values())
-                    .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                    .map(subsubfolder => {
-                      const isSubExpanded = expandedFolders.has(subsubfolder.fullPath);
-                      if (!isSubExpanded) return null;
-                      
-                      return (
-                        <div key={subsubfolder.fullPath} className="mb-6 mt-4">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Folder className="w-5 h-5 text-primary" />
-                            <h3 className="text-lg font-semibold">{subsubfolder.name}</h3>
-                            <span className="text-sm text-muted-foreground">
-                              ({subsubfolder.songs.length} שירים
-                              {subsubfolder.subfolders.size > 0 && `, ${subsubfolder.subfolders.size} תיקיות`})
-                            </span>
-                          </div>
-                          {/* Render nested subfolders as grid - directly below */}
-                          {subsubfolder.subfolders.size > 0 && (
-                            <div className="mb-4">
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                                {Array.from(subsubfolder.subfolders.values())
-                                  .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                                  .map(nestedFolder => renderFolderCard(nestedFolder))}
-                              </div>
-                            </div>
-                          )}
-                          {/* Render songs in this subfolder - directly below */}
-                          {subsubfolder.songs.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
-                              {subsubfolder.songs.map((song) => renderSongCard(song))}
-                            </div>
-                          )}
-                          {/* Render expanded nested subfolders - nested properly */}
-                          {Array.from(subsubfolder.subfolders.values())
-                            .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                            .map(nestedFolder => {
-                              const isNestedExpanded = expandedFolders.has(nestedFolder.fullPath);
-                              if (!isNestedExpanded) return null;
-                              
-                              return (
-                                <div key={nestedFolder.fullPath} className="mb-4 mt-4">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <Folder className="w-4 h-4 text-primary" />
-                                    <h4 className="text-base font-semibold">{nestedFolder.name}</h4>
-                                    <span className="text-xs text-muted-foreground">
-                                      ({nestedFolder.songs.length} שירים)
-                                    </span>
-                                  </div>
-                                  {nestedFolder.songs.length > 0 && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
-                                      {nestedFolder.songs.map((song) => renderSongCard(song))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
-                      );
-                    })}
-                </div>
-              );
-            })}
             {/* Don't render root level songs - they should be inside folders */}
           </>
         );
@@ -585,7 +592,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               
               {/* Render songs in this folder */}
               {folder.songs.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
                   {folder.songs.map((song) => renderSongCard(song))}
                 </div>
               )}
@@ -603,7 +610,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       return (
         <div
           key={song.id}
-          className={`group relative bg-secondary/30 rounded-lg p-3 sm:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
+          className={`group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer ${
             isCurrentSong ? "ring-2 ring-primary bg-secondary/70" : ""
           }`}
           onClick={() => onSongSelect(song)}
@@ -673,22 +680,22 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
     };
 
     return (
-      <div className="p-4 sm:p-6">
+      <div className="p-3 sm:p-4 md:p-6 pb-8 sm:pb-12">
         {renderFolderGrid(folderTree)}
       </div>
     );
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden shadow-[var(--shadow-card)]">
-      <div className="p-3 sm:p-4 border-b border-border bg-secondary/30">
+    <div className="bg-card rounded-xl border border-border overflow-hidden shadow-[var(--shadow-card)] mb-4 sm:mb-8">
+      <div className="p-2 sm:p-3 md:p-4 border-b border-border bg-secondary/30">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
         <h2 className="text-lg sm:text-xl font-semibold">השירים שלי</h2>
         <p className="text-xs sm:text-sm text-muted-foreground mt-1">
           {songs.length} שירים
         </p>
-          </div>
+      </div>
           <div className="flex items-center gap-2">
             {/* View Toggle */}
             <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
@@ -751,7 +758,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       {viewMode === 'grid' ? (
         renderGridView()
       ) : (
-      <div className="divide-y divide-border">
+      <div className="divide-y divide-border pb-4 sm:pb-8">
         {(() => {
           // Filter out "all music" folder and use its contents instead
           const allMusicFolder = Array.from(folderTree.subfolders.values())
