@@ -103,13 +103,56 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
   const toggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(path)) {
-      // If folder is already open, close it
+      // If folder is already open, close it and all its children
       newExpanded.delete(path);
+      // Remove all child paths
+      Array.from(newExpanded).forEach(p => {
+        if (p.startsWith(path + ' / ')) {
+          newExpanded.delete(p);
+        }
+      });
     } else {
-      // If opening a new folder, close all others and open only this one
-      // Close all currently open folders
-      newExpanded.clear();
-      // Open only this folder
+      // If opening a new folder, be smart about it:
+      // - Close siblings (folders at the same level)
+      // - Keep parent folders open
+      // - Allow nested folders to be opened
+      
+      // Find the parent path
+      const pathParts = path.split(' / ');
+      const parentPath = pathParts.slice(0, -1).join(' / ');
+      
+      // Close siblings (same level folders)
+      if (parentPath) {
+        Array.from(newExpanded).forEach(p => {
+          const pParts = p.split(' / ');
+          const pParentPath = pParts.slice(0, -1).join(' / ');
+          // If same parent, close it (it's a sibling)
+          if (pParentPath === parentPath && p !== path) {
+            newExpanded.delete(p);
+            // Also close all children of the sibling
+            Array.from(newExpanded).forEach(childPath => {
+              if (childPath.startsWith(p + ' / ')) {
+                newExpanded.delete(childPath);
+              }
+            });
+          }
+        });
+      } else {
+        // Top level - close all other top level folders
+        Array.from(newExpanded).forEach(p => {
+          if (!p.includes(' / ')) {
+            newExpanded.delete(p);
+            // Close all children
+            Array.from(newExpanded).forEach(childPath => {
+              if (childPath.startsWith(p + ' / ')) {
+                newExpanded.delete(childPath);
+              }
+            });
+          }
+        });
+      }
+      
+      // Open this folder
       newExpanded.add(path);
     }
     setExpandedFolders(newExpanded);
@@ -423,24 +466,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="mt-4">
-                {/* Render subfolders as grid - directly below parent folder */}
-                {folder.subfolders.size > 0 && (
-                  <div className="mb-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                      {Array.from(folder.subfolders.values())
-                        .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                        .map(subsubfolder => renderFolderCard(subsubfolder))}
-                    </div>
-                  </div>
-                )}
-                {/* Render songs in this folder - directly below subfolders */}
-                {folder.songs.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
-                    {folder.songs.map((song) => renderSongCard(song))}
-                  </div>
-                )}
-              </div>
+              {/* Empty - content will be rendered outside the grid */}
             </CollapsibleContent>
           </Collapsible>
         </div>
@@ -488,29 +514,55 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                   if (!isExpanded) return null;
                   
                   return (
-                    <div key={subfolder.fullPath} className="mt-4 mb-6">
-                      <Collapsible open={isExpanded} onOpenChange={() => toggleFolder(subfolder.fullPath)}>
-                        <CollapsibleContent>
-                          <div>
-                            {/* Render subfolders as grid - directly below parent folder */}
-                            {subfolder.subfolders.size > 0 && (
-                              <div className="mb-4">
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                                  {Array.from(subfolder.subfolders.values())
-                                    .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
-                                    .map(subsubfolder => renderFolderCard(subsubfolder))}
+                    <div key={subfolder.fullPath} className="mt-4 mb-6 w-full">
+                      <div>
+                        {/* Render subfolders as grid - directly below parent folder */}
+                        {subfolder.subfolders.size > 0 && (
+                          <div className="mb-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                              {Array.from(subfolder.subfolders.values())
+                                .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                                .map(subsubfolder => renderFolderCard(subsubfolder))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Render songs in this folder - directly below subfolders */}
+                        {subfolder.songs.length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
+                            {subfolder.songs.map((song) => renderSongCard(song))}
+                          </div>
+                        )}
+                        {/* Render expanded subfolders recursively */}
+                        {Array.from(subfolder.subfolders.values())
+                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                          .map(subsubfolder => {
+                            const isSubExpanded = expandedFolders.has(subsubfolder.fullPath);
+                            if (!isSubExpanded) return null;
+                            
+                            return (
+                              <div key={subsubfolder.fullPath} className="mt-4 mb-6">
+                                <div>
+                                  {/* Render nested subfolders */}
+                                  {subsubfolder.subfolders.size > 0 && (
+                                    <div className="mb-4">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                                        {Array.from(subsubfolder.subfolders.values())
+                                          .sort((a, b) => a.name.localeCompare(b.name, 'he-IL'))
+                                          .map(nestedFolder => renderFolderCard(nestedFolder))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Render songs in this subfolder */}
+                                  {subsubfolder.songs.length > 0 && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
+                                      {subsubfolder.songs.map((song) => renderSongCard(song))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            )}
-                            {/* Render songs in this folder - directly below subfolders */}
-                            {subfolder.songs.length > 0 && (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 mb-4">
-                                {subfolder.songs.map((song) => renderSongCard(song))}
-                              </div>
-                            )}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
+                            );
+                          })}
+                      </div>
                     </div>
                   );
                 })}

@@ -49,7 +49,13 @@ const MusicPlayer = ({
     
     let finalUrl = song.url;
     if (isNetlify && accessToken) {
-      finalUrl = `${song.url}?token=${encodeURIComponent(accessToken)}`;
+      // Check if URL already has query parameters
+      const separator = song.url.includes('?') ? '&' : '?';
+      finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+    } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
+      // For non-Netlify URLs, also add token if not present
+      const separator = song.url.includes('?') ? '&' : '?';
+      finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
     }
     
     // Optimize audio element for streaming
