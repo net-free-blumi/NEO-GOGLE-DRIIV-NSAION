@@ -62,13 +62,26 @@ const MusicPlayer = ({
     audio.preload = 'none'; // Don't preload - stream on demand
     audio.src = finalUrl;
     
-    // Restore saved position if exists
+    // Restore saved position if exists (for resume after pause)
     const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
     if (savedPosition) {
       const position = parseFloat(savedPosition);
       if (!isNaN(position) && position > 0) {
-        audio.currentTime = position;
-        setCurrentTime(position);
+        // Wait for metadata to load before setting position
+        if (audio.duration > 0 && position < audio.duration) {
+          audio.currentTime = position;
+          setCurrentTime(position);
+        } else {
+          // If metadata not loaded yet, set position after it loads
+          const handleMetadataLoad = () => {
+            if (audio.duration > 0 && position < audio.duration) {
+              audio.currentTime = position;
+              setCurrentTime(position);
+            }
+            audio.removeEventListener('loadedmetadata', handleMetadataLoad);
+          };
+          audio.addEventListener('loadedmetadata', handleMetadataLoad);
+        }
       }
     } else {
       audio.currentTime = 0;
@@ -96,19 +109,19 @@ const MusicPlayer = ({
         audio.load();
       }
       
-      // Restore saved position if exists
+      // Restore saved position if exists (for resume after pause)
       const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
       if (savedPosition) {
         const position = parseFloat(savedPosition);
         if (!isNaN(position) && position > 0) {
-          // Wait for metadata to load before setting position
+          // If audio is already loaded, set position immediately
           if (audio.duration > 0 && position < audio.duration) {
             audio.currentTime = position;
             setCurrentTime(position);
           } else {
-            // If metadata not loaded yet, set position after it loads
+            // Wait for metadata to load
             const handleMetadataLoad = () => {
-              if (position < audio.duration) {
+              if (audio.duration > 0 && position < audio.duration) {
                 audio.currentTime = position;
                 setCurrentTime(position);
               }
