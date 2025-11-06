@@ -391,14 +391,13 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
       })();
 
       return (
-        <>
+        <div key={folder.fullPath} className="group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50">
           <Collapsible
-            key={folder.fullPath}
             open={isExpanded}
             onOpenChange={() => toggleFolder(folder.fullPath)}
           >
             <CollapsibleTrigger asChild>
-              <div className="group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50 w-full h-full">
+              <div className="w-full">
                 {/* Folder Icon */}
                 <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
                   <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
@@ -423,8 +422,8 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                 </div>
               </div>
             </CollapsibleTrigger>
-            <CollapsibleContent className="col-span-full mt-4">
-              <div>
+            <CollapsibleContent>
+              <div className="mt-4">
                 {/* Render subfolders as grid - directly below parent folder */}
                 {folder.subfolders.size > 0 && (
                   <div className="mb-4">
@@ -444,7 +443,7 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
               </div>
             </CollapsibleContent>
           </Collapsible>
-        </>
+        </div>
       );
     };
 
@@ -481,48 +480,17 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
             {foldersToDisplay.length > 0 && (
               <div className="mb-8">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-                  {foldersToDisplay.map((subfolder) => {
-                    const isExpanded = expandedFolders.has(subfolder.fullPath);
-                    return (
-                      <Collapsible
-                        key={subfolder.fullPath}
-                        open={isExpanded}
-                        onOpenChange={() => toggleFolder(subfolder.fullPath)}
-                      >
-                        <CollapsibleTrigger asChild>
-                          <div className="group relative bg-secondary/30 rounded-lg p-2 sm:p-3 md:p-4 hover:bg-secondary/50 transition-all cursor-pointer border border-border/50 w-full h-full">
-                            {/* Folder Icon */}
-                            <div className="relative aspect-square w-full mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                              <Folder className="w-16 h-16 sm:w-20 sm:h-20 text-primary" />
-                              {/* Expand/Collapse Indicator */}
-                              <div className="absolute top-2 right-2">
-                                {isExpanded ? (
-                                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                                ) : (
-                                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                                )}
-                              </div>
-                            </div>
-                            {/* Folder Info */}
-                            <div className="min-w-0">
-                              <h4 className="font-medium truncate text-sm sm:text-base text-foreground">
-                                {subfolder.name}
-                              </h4>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {(() => {
-                                  const countSongs = (f: FolderNode): number => {
-                                    let count = f.songs.length;
-                                    f.subfolders.forEach(sub => count += countSongs(sub));
-                                    return count;
-                                  };
-                                  return countSongs(subfolder);
-                                })()} שירים
-                                {subfolder.subfolders.size > 0 && ` • ${subfolder.subfolders.size} תיקיות`}
-                              </p>
-                            </div>
-                          </div>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="col-span-full mt-4">
+                  {foldersToDisplay.map((subfolder) => renderFolderCard(subfolder))}
+                </div>
+                {/* Render expanded folder contents - directly below the grid */}
+                {foldersToDisplay.map((subfolder) => {
+                  const isExpanded = expandedFolders.has(subfolder.fullPath);
+                  if (!isExpanded) return null;
+                  
+                  return (
+                    <div key={subfolder.fullPath} className="mt-4 mb-6">
+                      <Collapsible open={isExpanded} onOpenChange={() => toggleFolder(subfolder.fullPath)}>
+                        <CollapsibleContent>
                           <div>
                             {/* Render subfolders as grid - directly below parent folder */}
                             {subfolder.subfolders.size > 0 && (
@@ -543,9 +511,9 @@ const SongList = ({ songs, currentSong, onSongSelect, onRefresh, isRefreshing }:
                           </div>
                         </CollapsibleContent>
                       </Collapsible>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {/* Don't render root level songs - they should be inside folders */}
