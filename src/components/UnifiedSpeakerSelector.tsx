@@ -120,6 +120,9 @@ const UnifiedSpeakerSelector = ({
 
       setSpeakers(discoveredSpeakers);
       
+      // Store speakers list in sessionStorage for MusicPlayer to access
+      sessionStorage.setItem('available_speakers', JSON.stringify(discoveredSpeakers));
+      
       if (discoveredSpeakers.length === 0) {
         toast({
           title: "לא נמצאו רמקולים",
@@ -282,6 +285,13 @@ const UnifiedSpeakerSelector = ({
     if (!speaker) return;
 
     try {
+      // Stop local audio before connecting to external speaker
+      const audio = audioRef.current || document.querySelector('audio') as HTMLAudioElement;
+      if (audio && speaker.type !== 'Browser') {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+
       switch (speaker.type) {
         case 'Chromecast':
           await castToChromecast();
@@ -303,6 +313,9 @@ const UnifiedSpeakerSelector = ({
           // Play on current device
           break;
       }
+      
+      // Store speakers list in sessionStorage for MusicPlayer to access
+      sessionStorage.setItem('available_speakers', JSON.stringify(speakers));
       
       onSpeakerChange(speakerId);
       toast({

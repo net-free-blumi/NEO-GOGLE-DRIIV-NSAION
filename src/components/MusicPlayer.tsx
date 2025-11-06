@@ -3,6 +3,7 @@ import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Song } from "@/pages/Index";
+import { useExternalSpeaker } from "@/hooks/useExternalSpeaker";
 
 interface MusicPlayerProps {
   song: Song;
@@ -168,11 +169,31 @@ const MusicPlayer = ({
     }
   }, [song.id, song.url, isPlaying]);
 
+  // Stop local audio when external speaker is active
+  useEffect(() => {
+    if (isExternalSpeakerActive && audioRef.current) {
+      const audio = audioRef.current;
+      if (!audio.paused) {
+        audio.pause();
+      }
+    }
+  }, [isExternalSpeakerActive, selectedSpeaker]);
+
   // Handle play/pause with better buffering
   useEffect(() => {
     if (!audioRef.current) return;
     
     const audio = audioRef.current;
+    
+    // If external speaker is active, control it instead of local audio
+    if (isExternalSpeakerActive) {
+      if (isPlaying) {
+        controlExternalSpeaker('play');
+      } else {
+        controlExternalSpeaker('pause');
+      }
+      return; // Don't control local audio when external speaker is active
+    }
     
     // Save position before any state changes
     const saveCurrentPosition = () => {
@@ -497,10 +518,17 @@ const MusicPlayer = ({
   }, [repeatMode, onNext]);
 
   useEffect(() => {
+    // If external speaker is active, send volume command to it
+    if (isExternalSpeakerActive) {
+      controlExternalSpeaker('volume', volume);
+      return;
+    }
+    
+    // Otherwise, control local audio
     if (audioRef.current) {
       audioRef.current.volume = volume / 100;
     }
-  }, [volume]);
+  }, [volume, isExternalSpeakerActive]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -515,8 +543,17 @@ const MusicPlayer = ({
   };
 
   const handleSeek = (value: number[]) => {
+    const seekTime = value[0];
+    
+    // If external speaker is active, send seek command to it
+    if (isExternalSpeakerActive) {
+      controlExternalSpeaker('seek', seekTime);
+      setCurrentTime(seekTime);
+      return;
+    }
+    
+    // Otherwise, control local audio
     if (audioRef.current && duration > 0) {
-      const seekTime = value[0];
       audioRef.current.currentTime = seekTime;
       setCurrentTime(seekTime);
     }
@@ -700,7 +737,13 @@ const MusicPlayer = ({
                 value={[volume]}
                 max={100}
                 step={1}
-                onValueChange={(v) => setVolume(v[0])}
+                onValueChange={(v) => {
+                  setVolume(v[0]);
+                  // If external speaker is active, send volume command immediately
+                  if (isExternalSpeakerActive) {
+                    controlExternalSpeaker('volume', v[0]);
+                  }
+                }}
                 className="w-24 cursor-pointer"
               />
             </div>
@@ -880,7 +923,13 @@ const MusicPlayer = ({
                   value={[volume]}
                   max={100}
                   step={1}
-                  onValueChange={(v) => setVolume(v[0])}
+                  onValueChange={(v) => {
+                    setVolume(v[0]);
+                    // If external speaker is active, send volume command immediately
+                    if (isExternalSpeakerActive) {
+                      controlExternalSpeaker('volume', v[0]);
+                    }
+                  }}
                   className="flex-1 cursor-pointer"
                 />
                 <span className="text-sm md:text-base text-muted-foreground w-12 text-center">
