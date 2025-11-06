@@ -61,7 +61,19 @@ const MusicPlayer = ({
     // Optimize audio element for streaming
     audio.preload = 'none'; // Don't preload - stream on demand
     audio.src = finalUrl;
-    audio.currentTime = 0;
+    
+    // Restore saved position if exists
+    const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+    if (savedPosition) {
+      const position = parseFloat(savedPosition);
+      if (!isNaN(position) && position > 0) {
+        audio.currentTime = position;
+        setCurrentTime(position);
+      }
+    } else {
+      audio.currentTime = 0;
+      setCurrentTime(0);
+    }
     
     // Set up streaming optimization
     audio.setAttribute('preload', 'none');
@@ -82,6 +94,29 @@ const MusicPlayer = ({
       // Ensure audio is loaded before playing
       if (!audio.src || audio.readyState === 0) {
         audio.load();
+      }
+      
+      // Restore saved position if exists
+      const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
+      if (savedPosition) {
+        const position = parseFloat(savedPosition);
+        if (!isNaN(position) && position > 0) {
+          // Wait for metadata to load before setting position
+          if (audio.duration > 0 && position < audio.duration) {
+            audio.currentTime = position;
+            setCurrentTime(position);
+          } else {
+            // If metadata not loaded yet, set position after it loads
+            const handleMetadataLoad = () => {
+              if (position < audio.duration) {
+                audio.currentTime = position;
+                setCurrentTime(position);
+              }
+              audio.removeEventListener('loadedmetadata', handleMetadataLoad);
+            };
+            audio.addEventListener('loadedmetadata', handleMetadataLoad);
+          }
+        }
       }
       
       // Wait for enough data before playing to prevent stuttering
@@ -136,6 +171,13 @@ const MusicPlayer = ({
       
       tryPlay();
     } else {
+      // When pausing, show loading state and save current position
+      if (audio.readyState > 0) {
+        // Save current position to sessionStorage
+        const position = audio.currentTime;
+        sessionStorage.setItem(`song_position_${song.id}`, position.toString());
+      }
+      setIsLoading(true);
       audio.pause();
     }
   }, [isPlaying]);
@@ -175,6 +217,7 @@ const MusicPlayer = ({
 
     const handlePlaying = () => {
       setIsBuffering(false);
+      setIsLoading(false);
     };
 
     const handleProgress = () => {
