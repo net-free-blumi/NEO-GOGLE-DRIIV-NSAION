@@ -67,7 +67,6 @@ const MusicPlayer = ({
     audio.src = finalUrl;
     
     // Restore saved position if exists (for resume after pause)
-    const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
     if (savedPosition) {
       const position = parseFloat(savedPosition);
       if (!isNaN(position) && position > 0) {
