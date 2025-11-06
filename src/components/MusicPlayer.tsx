@@ -40,6 +40,47 @@ const MusicPlayer = ({
     if (!audioRef.current || !song.url) return;
 
     const audio = audioRef.current;
+    
+    // Helper function to refresh token if needed
+    const refreshTokenIfNeeded = async (): Promise<string | null> => {
+      let accessToken = sessionStorage.getItem('gd_access_token');
+      const expiresAt = sessionStorage.getItem('gd_token_expires_at');
+      
+      // Check if token is expired - if so, try to refresh it
+      if (accessToken && expiresAt && parseInt(expiresAt) <= Date.now()) {
+        // Token expired, try to refresh using Google Token Client
+        console.log('Token expired, attempting to refresh...');
+        const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+        if (GOOGLE_CLIENT_ID && (window as any).google?.accounts?.oauth2) {
+          // Use a promise to wait for token refresh
+          await new Promise<void>((resolve) => {
+            const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+              client_id: GOOGLE_CLIENT_ID,
+              scope: 'https://www.googleapis.com/auth/drive.readonly',
+              prompt: '', // Use cached consent
+              callback: (resp: any) => {
+                if (resp.access_token) {
+                  const expiresIn = resp.expires_in || 3600;
+                  const newExpiresAt = Date.now() + (expiresIn - 60) * 1000;
+                  sessionStorage.setItem('gd_access_token', resp.access_token);
+                  sessionStorage.setItem('gd_token_expires_at', newExpiresAt.toString());
+                  accessToken = resp.access_token;
+                  console.log('Token refreshed successfully');
+                } else if (resp.error) {
+                  console.error('Token refresh error:', resp.error);
+                }
+                resolve();
+              },
+            });
+            tokenClient.requestAccessToken({ prompt: '' });
+          });
+        } else {
+          console.warn('Cannot refresh token: Google OAuth not available');
+        }
+      }
+      
+      return accessToken;
+    };
     // Only set loading if it's a new song (not resuming) AND we're playing
     // Don't set loading when pausing/stopping
     const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
@@ -47,10 +88,10 @@ const MusicPlayer = ({
     
     if (isNewSong && isPlaying) {
       // Only show loading when starting a new song that's actually playing
-      setIsLoading(true);
-      setIsBuffering(false);
-      setDuration(0);
-      setCurrentTime(0);
+    setIsLoading(true);
+    setIsBuffering(false);
+    setDuration(0);
+    setCurrentTime(0);
     } else if (!isPlaying) {
       // When pausing/stopping, don't show loading
       setIsLoading(false);
@@ -58,22 +99,24 @@ const MusicPlayer = ({
     
     // Build URL with token if needed
     const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
-    const accessToken = sessionStorage.getItem('gd_access_token');
     
+    // Refresh token if needed and build URL
+    refreshTokenIfNeeded().then((accessToken) => {
     let finalUrl = song.url;
     if (isNetlify && accessToken) {
-      // Check if URL already has query parameters
-      const separator = song.url.includes('?') ? '&' : '?';
-      finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-    } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
-      // For non-Netlify URLs, also add token if not present
-      const separator = song.url.includes('?') ? '&' : '?';
-      finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-    }
-    
-    // Optimize audio element for streaming
-    audio.preload = 'none'; // Don't preload - stream on demand
-    audio.src = finalUrl;
+        // Check if URL already has query parameters
+        const separator = song.url.includes('?') ? '&' : '?';
+        finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+      } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
+        // For non-Netlify URLs, also add token if not present
+        const separator = song.url.includes('?') ? '&' : '?';
+        finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+      }
+      
+      // Optimize audio element for streaming
+      audio.preload = 'none'; // Don't preload - stream on demand
+      audio.src = finalUrl;
+    });
     
     // Restore saved position if exists (for resume after pause)
     // Don't reset position if audio is already loaded and paused (normal pause, not new song)
@@ -99,7 +142,7 @@ const MusicPlayer = ({
     } else if (isNewSong || (audio.readyState === 0 && isPlaying)) {
       // Only reset to 0 if it's a new song or audio hasn't loaded yet
       // Don't reset if audio is already loaded and paused (normal pause)
-      audio.currentTime = 0;
+    audio.currentTime = 0;
       setCurrentTime(0);
     }
     // If audio is already loaded and paused, keep current position (don't reset)
