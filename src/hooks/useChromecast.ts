@@ -828,6 +828,27 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           return;
         }
 
+        // Update device name from receiver if available
+        try {
+          if (typeof session.getReceiver === 'function') {
+            const receiver = session.getReceiver();
+            if (receiver && receiver.friendlyName) {
+              const currentDeviceName = stateRef.current.device?.name || stateRef.current.device?.friendlyName || '';
+              if (receiver.friendlyName !== currentDeviceName) {
+                updateState({
+                  device: {
+                    id: receiver.friendlyName,
+                    name: receiver.friendlyName,
+                    friendlyName: receiver.friendlyName,
+                  }
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.log('Error updating device name:', e);
+        }
+        
         // Get media session from current session
         const mediaSession = session.getMediaSession() || stateRef.current.mediaSession;
         if (mediaSession) {

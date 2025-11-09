@@ -69,6 +69,10 @@ const MusicPlayer = ({
     }
   }, [song.id, song.url, isChromecastActive]);
 
+  // Track if user is manually changing volume to prevent sync loop
+  const isVolumeChangingRef = useRef(false);
+  const volumeChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Sync Chromecast state with local state
   useEffect(() => {
     if (isChromecastActive) {
@@ -82,17 +86,26 @@ const MusicPlayer = ({
         setDuration(chromecast.state.duration);
       }
       
-      // Update volume from Chromecast
-      if (chromecast.state.volume !== volume) {
+      // Update volume from Chromecast - but only if user is not manually changing it
+      if (!isVolumeChangingRef.current && Math.abs(chromecast.state.volume - volume) > 1) {
         setVolume(chromecast.state.volume);
       }
       
-      // Update muted state from Chromecast
-      if (chromecast.state.isMuted !== isMuted) {
+      // Update muted state from Chromecast - but only if user is not manually changing it
+      if (!isVolumeChangingRef.current && chromecast.state.isMuted !== isMuted) {
         setIsMuted(chromecast.state.isMuted);
       }
     }
   }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration, chromecast.state.volume, chromecast.state.isMuted, chromecast.state.isPlaying]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (volumeChangeTimeoutRef.current) {
+        clearTimeout(volumeChangeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
@@ -608,7 +621,22 @@ const MusicPlayer = ({
   useEffect(() => {
     // If Chromecast is active, send volume command to it
     if (isChromecastActive) {
+      // Mark that we're changing volume to prevent sync loop
+      isVolumeChangingRef.current = true;
+      
+      // Clear any existing timeout
+      if (volumeChangeTimeoutRef.current) {
+        clearTimeout(volumeChangeTimeoutRef.current);
+      }
+      
+      // Send volume command
       chromecast.setVolume(volume);
+      
+      // Reset the flag after a delay to allow sync again
+      volumeChangeTimeoutRef.current = setTimeout(() => {
+        isVolumeChangingRef.current = false;
+      }, 1000);
+      
       return;
     }
     
@@ -627,7 +655,22 @@ const MusicPlayer = ({
   useEffect(() => {
     // If Chromecast is active, send mute command to it
     if (isChromecastActive) {
+      // Mark that we're changing mute to prevent sync loop
+      isVolumeChangingRef.current = true;
+      
+      // Clear any existing timeout
+      if (volumeChangeTimeoutRef.current) {
+        clearTimeout(volumeChangeTimeoutRef.current);
+      }
+      
+      // Send mute command
       chromecast.setMuted(isMuted);
+      
+      // Reset the flag after a delay to allow sync again
+      volumeChangeTimeoutRef.current = setTimeout(() => {
+        isVolumeChangingRef.current = false;
+      }, 1000);
+      
       return;
     }
     

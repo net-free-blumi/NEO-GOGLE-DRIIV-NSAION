@@ -27,13 +27,57 @@ type RepeatMode = 'none' | 'one' | 'all';
 
 const Index = () => {
   const [songs, setSongs] = useState<Song[]>([]);
-  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [currentSong, setCurrentSong] = useState<Song | null>(() => {
+    // Load saved song from localStorage
+    try {
+      const saved = localStorage.getItem('last_song');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.log('Error loading saved song:', e);
+    }
+    return null;
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSpeaker, setSelectedSpeaker] = useState<string | null>(null);
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string | null>(() => {
+    // Load saved speaker from localStorage
+    try {
+      const saved = localStorage.getItem('last_speaker');
+      if (saved) {
+        return saved;
+      }
+    } catch (e) {
+      console.log('Error loading saved speaker:', e);
+    }
+    return null;
+  });
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('none');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
+  
+  // Save current song to localStorage
+  useEffect(() => {
+    if (currentSong) {
+      try {
+        localStorage.setItem('last_song', JSON.stringify(currentSong));
+      } catch (e) {
+        console.log('Error saving song:', e);
+      }
+    }
+  }, [currentSong]);
+  
+  // Save selected speaker to localStorage
+  useEffect(() => {
+    if (selectedSpeaker) {
+      try {
+        localStorage.setItem('last_speaker', selectedSpeaker);
+      } catch (e) {
+        console.log('Error saving speaker:', e);
+      }
+    }
+  }, [selectedSpeaker]);
   const handleLogout = () => {
     sessionStorage.removeItem("gd_access_token");
     sessionStorage.removeItem("gd_token_expires_at");

@@ -130,6 +130,31 @@ const UnifiedSpeakerSelector = ({
     };
   }, []);
 
+  // Auto-connect to saved speaker on mount
+  useEffect(() => {
+    const autoConnect = async () => {
+      // Wait a bit for speakers to be discovered
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check if we have a saved speaker
+      const savedSpeaker = localStorage.getItem('last_speaker');
+      if (savedSpeaker && selectedSpeaker === savedSpeaker) {
+        // Check if it's a Chromecast speaker
+        const speaker = speakers.find((s) => s.id === savedSpeaker);
+        if (speaker?.type === 'Chromecast' && !chromecast.state.isConnected) {
+          // Try to connect to Chromecast
+          try {
+            await chromecast.connect();
+          } catch (e) {
+            console.log('Auto-connect failed:', e);
+          }
+        }
+      }
+    };
+    
+    autoConnect();
+  }, [speakers, selectedSpeaker, chromecast]);
+
   const discoverSpeakers = async (): Promise<number> => {
     setIsScanning(true);
     const discoveredSpeakers: Speaker[] = [];
