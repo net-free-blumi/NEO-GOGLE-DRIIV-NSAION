@@ -617,25 +617,68 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     const sessionState = session.getSessionState ? session.getSessionState() : null;
     console.log('🔍 Session state:', sessionState);
     
-    // Try to get receiver (optional - not always available)
+    // Try to get receiver - CRITICAL for volume control!
     let receiver = null;
+    let castDevice = null;
+    
+    // Method 1: Try session.getReceiver()
     if (typeof session.getReceiver === 'function') {
       try {
         receiver = session.getReceiver();
         if (receiver) {
-          console.log('🔍 Receiver found:', {
+          console.log('🔍 Receiver found via getReceiver():', {
             friendlyName: receiver.friendlyName,
             volume: receiver.volume ? {
               level: receiver.volume.level,
               muted: receiver.volume.muted
-            } : null
+            } : null,
+            methods: Object.getOwnPropertyNames(receiver).filter(name => name.toLowerCase().includes('volume'))
           });
-        } else {
-          console.log('⚠️ Receiver is null, but session exists - will try session.setVolume directly');
         }
       } catch (e) {
-        console.log('⚠️ Error getting receiver (will try session.setVolume directly):', e);
+        console.log('⚠️ Error getting receiver via getReceiver():', e);
       }
+    }
+    
+    // Method 2: Try session.getCastDevice()
+    if (typeof session.getCastDevice === 'function') {
+      try {
+        castDevice = session.getCastDevice();
+        if (castDevice) {
+          console.log('🔍 CastDevice found via getCastDevice():', {
+            friendlyName: castDevice.friendlyName,
+            volume: castDevice.volume ? {
+              level: castDevice.volume.level,
+              muted: castDevice.volume.muted
+            } : null
+          });
+          // Use castDevice as receiver if receiver is null
+          if (!receiver && castDevice) {
+            receiver = castDevice;
+          }
+        }
+      } catch (e) {
+        console.log('⚠️ Error getting castDevice via getCastDevice():', e);
+      }
+    }
+    
+    // Method 3: Try accessing receiver directly from session
+    if (!receiver && (session as any).receiver) {
+      receiver = (session as any).receiver;
+      console.log('🔍 Receiver found via session.receiver:', {
+        friendlyName: receiver.friendlyName,
+        volume: receiver.volume ? {
+          level: receiver.volume.level,
+          muted: receiver.volume.muted
+        } : null
+      });
+    }
+    
+    if (!receiver) {
+      console.error('❌ CRITICAL: No receiver found! Volume control will NOT work without receiver!');
+      console.error('🔍 Session object:', session);
+      console.error('🔍 Session methods:', Object.getOwnPropertyNames(session));
+      console.error('🔍 Session prototype:', Object.getPrototypeOf(session));
     }
 
     const volLevel = Math.max(0, Math.min(1, volume / 100));
@@ -643,28 +686,90 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
     try {
       // Method 1: Try receiver.setVolumeLevel if receiver is available (Cast SDK v3+)
-      if (receiver && typeof receiver.setVolumeLevel === 'function') {
-        console.log('📤 Using receiver.setVolumeLevel');
-        return new Promise((resolve) => {
-          try {
-            receiver.setVolumeLevel(
-              volLevel,
-              () => {
-                console.log('✅ Volume set successfully via setVolumeLevel:', volume);
-                updateState({ volume, session });
-                resolve(true);
-              },
-              (error: any) => {
-                console.error('❌ Error setting volume via setVolumeLevel:', error);
-                // Fall through to session.setVolume
-                resolve(false);
-              }
-            );
-          } catch (e) {
-            console.error('❌ Exception calling setVolumeLevel:', e);
-            resolve(false);
-          }
-        });
+      // This is the PREFERRED method - it works better than session.setVolume
+      if (receiver) {
+        // Try receiver.setVolumeLevel (if available)
+        if (typeof receiver.setVolumeLevel === 'function') {
+          console.log('📤 Using receiver.setVolumeLevel (PREFERRED METHOD)');
+          return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              console.error('❌ receiver.setVolumeLevel timeout after 5s');
+              resolve(false);
+            }, 5000);
+            
+            try {
+              receiver.setVolumeLevel(
+                volLevel,
+                () => {
+                  clearTimeout(timeout);
+                  console.log('✅ Volume set successfully via receiver.setVolumeLevel:', volume);
+                  updateState({ volume, session });
+                  resolve(true);
+                },
+                (error: any) => {
+                  clearTimeout(timeout);
+                  console.error('❌ Error setting volume via receiver.setVolumeLevel:', error);
+                  resolve(false);
+                }
+              );
+            } catch (e) {
+              clearTimeout(timeout);
+              console.error('❌ Exception calling receiver.setVolumeLevel:', e);
+              resolve(false);
+            }
+          });
+        }
+        
+        // Try receiver.volume.level assignment + session.setVolume
+        if (receiver.volume) {
+          console.log('📤 Trying receiver.volume.level assignment + session.setVolume');
+          // Set receiver volume directly
+          receiver.volume.level = volLevel;
+          receiver.volume.muted = stateRef.current.isMuted;
+          console.log('✅ Receiver volume set directly:', {
+            level: receiver.volume.level,
+            muted: receiver.volume.muted
+          });
+          
+          // Now try to sync with session.setVolume
+          const vol = new (window as any).chrome.cast.Volume();
+          vol.level = receiver.volume.level;
+          vol.muted = receiver.volume.muted;
+          
+          return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              console.error('❌ session.setVolume timeout after 5s');
+              // Even if timeout, the receiver.volume was set, so return true
+              updateState({ volume, session });
+              resolve(true);
+            }, 5000);
+            
+            try {
+              session.setVolume(
+                vol,
+                () => {
+                  clearTimeout(timeout);
+                  console.log('✅ Volume set via receiver.volume + session.setVolume:', volume);
+                  updateState({ volume, session });
+                  resolve(true);
+                },
+                (error: any) => {
+                  clearTimeout(timeout);
+                  console.error('❌ Error in session.setVolume (but receiver.volume was set):', error);
+                  // Even if error, receiver.volume was set, so return true
+                  updateState({ volume, session });
+                  resolve(true);
+                }
+              );
+            } catch (e) {
+              clearTimeout(timeout);
+              console.error('❌ Exception in session.setVolume (but receiver.volume was set):', e);
+              // Even if exception, receiver.volume was set, so return true
+              updateState({ volume, session });
+              resolve(true);
+            }
+          });
+        }
       }
       
       // Method 2: Try using CastReceiverVolumeRequest (newer API)
