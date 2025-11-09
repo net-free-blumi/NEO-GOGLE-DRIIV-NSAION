@@ -617,34 +617,33 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     const sessionState = session.getSessionState ? session.getSessionState() : null;
     console.log('🔍 Session state:', sessionState);
     
-    // Check if receiver is available
+    // Try to get receiver (optional - not always available)
     let receiver = null;
     if (typeof session.getReceiver === 'function') {
       try {
         receiver = session.getReceiver();
-        console.log('🔍 Receiver:', receiver ? {
-          friendlyName: receiver.friendlyName,
-          volume: receiver.volume ? {
-            level: receiver.volume.level,
-            muted: receiver.volume.muted
-          } : null
-        } : 'null');
+        if (receiver) {
+          console.log('🔍 Receiver found:', {
+            friendlyName: receiver.friendlyName,
+            volume: receiver.volume ? {
+              level: receiver.volume.level,
+              muted: receiver.volume.muted
+            } : null
+          });
+        } else {
+          console.log('⚠️ Receiver is null, but session exists - will try session.setVolume directly');
+        }
       } catch (e) {
-        console.error('❌ Error getting receiver:', e);
+        console.log('⚠️ Error getting receiver (will try session.setVolume directly):', e);
       }
-    }
-
-    if (!receiver) {
-      console.error('❌ No receiver available for volume control');
-      return false;
     }
 
     const volLevel = Math.max(0, Math.min(1, volume / 100));
     console.log('🔊 Setting volume to:', volume, '% (', volLevel, ')');
 
     try {
-      // Method 1: Use receiver.setVolumeLevel (this is the correct way for Cast SDK v3+)
-      if (typeof receiver.setVolumeLevel === 'function') {
+      // Method 1: Try receiver.setVolumeLevel if receiver is available (Cast SDK v3+)
+      if (receiver && typeof receiver.setVolumeLevel === 'function') {
         console.log('📤 Using receiver.setVolumeLevel');
         return new Promise((resolve) => {
           try {
@@ -657,26 +656,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               },
               (error: any) => {
                 console.error('❌ Error setting volume via setVolumeLevel:', error);
-                // Try session.setVolume as fallback
-                try {
-                  const vol = new (window as any).chrome.cast.Volume();
-                  vol.level = volLevel;
-                  vol.muted = stateRef.current.isMuted;
-                  session.setVolume(vol,
-                    () => {
-                      console.log('✅ Volume set via session.setVolume (fallback):', volume);
-                      updateState({ volume, session });
-                      resolve(true);
-                    },
-                    (error2: any) => {
-                      console.error('❌ Volume set failed (fallback):', error2);
-                      resolve(false);
-                    }
-                  );
-                } catch (e) {
-                  console.error('❌ Fallback also failed:', e);
-                  resolve(false);
-                }
+                // Fall through to session.setVolume
+                resolve(false);
               }
             );
           } catch (e) {
@@ -686,7 +667,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         });
       }
       
-      // Method 2: session.setVolume (standard method)
+      // Method 2: session.setVolume (standard method - works even without receiver)
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = volLevel;
@@ -730,8 +711,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         });
       }
       
-      // Method 3: Try setting receiver.volume directly (last resort)
-      if (receiver.volume) {
+      // Method 3: Try setting receiver.volume directly if receiver is available (last resort)
+      if (receiver && receiver.volume) {
         console.log('🔄 Trying direct receiver.volume assignment');
         try {
           receiver.volume.level = volLevel;
