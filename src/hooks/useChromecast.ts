@@ -233,12 +233,38 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   // Disconnect from Chromecast
   const disconnect = useCallback(async () => {
     const ctx = getCastContext();
-    if (!ctx) return;
+    if (!ctx) {
+      // Even if context is not available, clear state
+      updateState({
+        isConnected: false,
+        device: null,
+        session: null,
+        mediaSession: null,
+        currentMedia: null,
+      });
+      return;
+    }
 
     try {
       const session = ctx.getCurrentSession();
       if (session) {
-        await session.endSession(true);
+        try {
+          // Stop media first if playing
+          const mediaSession = session.getMediaSession();
+          if (mediaSession && typeof mediaSession.stop === 'function') {
+            try {
+              await mediaSession.stop();
+            } catch (e) {
+              console.log('Error stopping media:', e);
+            }
+          }
+          
+          // End session
+          await session.endSession(true);
+        } catch (sessionError) {
+          console.log('Error ending session:', sessionError);
+          // Continue to clear state even if endSession fails
+        }
       }
 
       updateState({
@@ -250,6 +276,14 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       });
     } catch (error) {
       console.error('Error disconnecting from Chromecast:', error);
+      // Clear state even if there's an error
+      updateState({
+        isConnected: false,
+        device: null,
+        session: null,
+        mediaSession: null,
+        currentMedia: null,
+      });
     }
   }, [getCastContext, updateState]);
 
@@ -258,23 +292,41 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     if (!mediaSession) return;
 
     const onMediaUpdate = () => {
-      const playerState = mediaSession.playerState;
-      // Get current time from media session
-      const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
-      const media = mediaSession.media;
-      
-      updateState({
-        mediaSession,
-        isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
-        currentTime,
-        duration: media?.duration || 0,
-        volume: mediaSession.volume?.level !== undefined ? mediaSession.volume.level * 100 : stateRef.current.volume,
-        isMuted: mediaSession.volume?.muted || false,
-      });
+      try {
+        const playerState = mediaSession.playerState;
+        // Get current time from media session
+        const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
+        const media = mediaSession.media;
+        
+        updateState({
+          mediaSession,
+          isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
+          currentTime,
+          duration: media?.duration || 0,
+          volume: mediaSession.volume?.level !== undefined ? mediaSession.volume.level * 100 : stateRef.current.volume,
+          isMuted: mediaSession.volume?.muted || false,
+        });
+      } catch (e) {
+        console.log('Error in media update listener:', e);
+      }
     };
 
-    mediaSession.addUpdateListener(onMediaUpdate);
-    mediaSession.addStatusListener(onMediaUpdate);
+    // Add listeners only if they exist
+    if (typeof mediaSession.addUpdateListener === 'function') {
+      try {
+        mediaSession.addUpdateListener(onMediaUpdate);
+      } catch (e) {
+        console.log('Error adding update listener:', e);
+      }
+    }
+    
+    if (typeof mediaSession.addStatusListener === 'function') {
+      try {
+        mediaSession.addStatusListener(onMediaUpdate);
+      } catch (e) {
+        console.log('Error adding status listener:', e);
+      }
+    }
   }, [updateState]);
 
   // Load media to Chromecast
@@ -330,11 +382,39 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           currentMedia: { url, title, contentType },
           isPlaying: true,
         });
+      } else {
+        // If no media session returned, try to get it from session
+        const existingMediaSession = session.getMediaSession();
+        if (existingMediaSession) {
+          setMediaListeners(existingMediaSession);
+          updateState({
+            mediaSession: existingMediaSession,
+            currentMedia: { url, title, contentType },
+            isPlaying: true,
+          });
+        }
       }
 
       return true;
     } catch (error: any) {
       console.error('Error loading media to Chromecast:', error);
+      
+      // Handle specific error codes
+      if (error.code === 'session_error' || error.code === 'timeout') {
+        // Session might have ended, try to reconnect
+        const ctx = getCastContext();
+        const currentSession = ctx?.getCurrentSession();
+        if (!currentSession) {
+          options.onError?.(new Error('החיבור נותק. נסה להתחבר שוב.'));
+          updateState({
+            isConnected: false,
+            session: null,
+            mediaSession: null,
+          });
+          return false;
+        }
+      }
+      
       options.onError?.(new Error(error.message || 'לא ניתן לשדר ל-Chromecast'));
       return false;
     }
@@ -343,31 +423,79 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   // Control playback
   const play = useCallback(async () => {
     const mediaSession = stateRef.current.mediaSession;
-    if (!mediaSession) return false;
+    if (!mediaSession) {
+      // Try to get media session from current session
+      const ctx = getCastContext();
+      const session = ctx?.getCurrentSession();
+      if (session) {
+        const ms = session.getMediaSession();
+        if (ms && typeof ms.play === 'function') {
+          try {
+            await ms.play();
+            setMediaListeners(ms);
+            updateState({ mediaSession: ms, isPlaying: true });
+            return true;
+          } catch (e) {
+            console.error('Error playing:', e);
+            return false;
+          }
+        }
+      }
+      return false;
+    }
 
     try {
-      await mediaSession.play();
-      updateState({ isPlaying: true });
-      return true;
+      if (typeof mediaSession.play === 'function') {
+        await mediaSession.play();
+        updateState({ isPlaying: true });
+        return true;
+      } else {
+        console.error('play() is not a function on mediaSession');
+        return false;
+      }
     } catch (error) {
       console.error('Error playing:', error);
       return false;
     }
-  }, [updateState]);
+  }, [updateState, getCastContext, setMediaListeners]);
 
   const pause = useCallback(async () => {
     const mediaSession = stateRef.current.mediaSession;
-    if (!mediaSession) return false;
+    if (!mediaSession) {
+      // Try to get media session from current session
+      const ctx = getCastContext();
+      const session = ctx?.getCurrentSession();
+      if (session) {
+        const ms = session.getMediaSession();
+        if (ms && typeof ms.pause === 'function') {
+          try {
+            await ms.pause();
+            setMediaListeners(ms);
+            updateState({ mediaSession: ms, isPlaying: false });
+            return true;
+          } catch (e) {
+            console.error('Error pausing:', e);
+            return false;
+          }
+        }
+      }
+      return false;
+    }
 
     try {
-      await mediaSession.pause();
-      updateState({ isPlaying: false });
-      return true;
+      if (typeof mediaSession.pause === 'function') {
+        await mediaSession.pause();
+        updateState({ isPlaying: false });
+        return true;
+      } else {
+        console.error('pause() is not a function on mediaSession');
+        return false;
+      }
     } catch (error) {
       console.error('Error pausing:', error);
       return false;
     }
-  }, [updateState]);
+  }, [updateState, getCastContext, setMediaListeners]);
 
   const stop = useCallback(async () => {
     const mediaSession = stateRef.current.mediaSession;
@@ -385,51 +513,95 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
   const seek = useCallback(async (time: number) => {
     const mediaSession = stateRef.current.mediaSession;
-    if (!mediaSession) return false;
+    if (!mediaSession) {
+      // Try to get media session from current session
+      const ctx = getCastContext();
+      const session = ctx?.getCurrentSession();
+      if (session) {
+        const ms = session.getMediaSession();
+        if (ms && typeof ms.seek === 'function') {
+          try {
+            const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
+            seekRequest.currentTime = time;
+            await ms.seek(seekRequest);
+            setMediaListeners(ms);
+            updateState({ mediaSession: ms, currentTime: time });
+            return true;
+          } catch (e) {
+            console.error('Error seeking:', e);
+            return false;
+          }
+        }
+      }
+      return false;
+    }
 
     try {
-      const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
-      seekRequest.currentTime = time;
-      await mediaSession.seek(seekRequest);
-      updateState({ currentTime: time });
-      return true;
+      if (typeof mediaSession.seek === 'function') {
+        const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
+        seekRequest.currentTime = time;
+        await mediaSession.seek(seekRequest);
+        updateState({ currentTime: time });
+        return true;
+      } else {
+        console.error('seek() is not a function on mediaSession');
+        return false;
+      }
     } catch (error) {
       console.error('Error seeking:', error);
       return false;
     }
-  }, [updateState]);
+  }, [updateState, getCastContext, setMediaListeners]);
 
   const setVolume = useCallback(async (volume: number) => {
-    const session = stateRef.current.session;
-    if (!session) return false;
+    const ctx = getCastContext();
+    const session = ctx?.getCurrentSession() || stateRef.current.session;
+    if (!session) {
+      // Try to get session from context
+      return false;
+    }
 
     try {
-      const vol = new (window as any).chrome.cast.Volume();
-      vol.level = Math.max(0, Math.min(1, volume / 100));
-      await session.setVolume(vol);
-      updateState({ volume });
-      return true;
+      if (typeof session.setVolume === 'function') {
+        const vol = new (window as any).chrome.cast.Volume();
+        vol.level = Math.max(0, Math.min(1, volume / 100));
+        await session.setVolume(vol);
+        updateState({ volume, session });
+        return true;
+      } else {
+        console.error('setVolume() is not a function on session');
+        return false;
+      }
     } catch (error) {
       console.error('Error setting volume:', error);
       return false;
     }
-  }, [updateState]);
+  }, [updateState, getCastContext]);
 
   const setMuted = useCallback(async (muted: boolean) => {
-    const session = stateRef.current.session;
-    if (!session) return false;
+    const ctx = getCastContext();
+    const session = ctx?.getCurrentSession() || stateRef.current.session;
+    if (!session) {
+      // Try to get session from context
+      return false;
+    }
 
     try {
-      const vol = new (window as any).chrome.cast.Volume();
-      vol.muted = muted;
-      await session.setVolume(vol);
-      updateState({ isMuted: muted });
-      return true;
+      if (typeof session.setVolume === 'function') {
+        const vol = new (window as any).chrome.cast.Volume();
+        vol.muted = muted;
+        await session.setVolume(vol);
+        updateState({ isMuted: muted, session });
+        return true;
+      } else {
+        console.error('setVolume() is not a function on session');
+        return false;
+      }
     } catch (error) {
       console.error('Error setting muted:', error);
       return false;
     }
-  }, [updateState]);
+  }, [updateState, getCastContext]);
 
   // Monitor session state
   useEffect(() => {
@@ -499,12 +671,50 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
     // Poll for media updates
     const interval = setInterval(() => {
-      const mediaSession = stateRef.current.mediaSession;
-      if (mediaSession) {
-        const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
-        if (Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
-          updateState({ currentTime });
+      try {
+        const ctx = getCastContext();
+        const session = ctx?.getCurrentSession();
+        if (!session) {
+          // No session - clear state if still marked as connected
+          if (stateRef.current.isConnected) {
+            updateState({
+              isConnected: false,
+              device: null,
+              session: null,
+              mediaSession: null,
+              currentMedia: null,
+            });
+          }
+          return;
         }
+
+        // Get media session from current session
+        const mediaSession = session.getMediaSession() || stateRef.current.mediaSession;
+        if (mediaSession) {
+          // Update media session in state if changed
+          if (mediaSession !== stateRef.current.mediaSession) {
+            setMediaListeners(mediaSession);
+            updateState({ mediaSession });
+          }
+          
+          // Update current time
+          const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
+          if (Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
+            updateState({ currentTime });
+          }
+          
+          // Update playing state
+          const playerState = mediaSession.playerState;
+          const PlayerState = (window as any).chrome?.cast?.media?.PlayerState;
+          if (PlayerState) {
+            const isPlaying = playerState === PlayerState.PLAYING;
+            if (isPlaying !== stateRef.current.isPlaying) {
+              updateState({ isPlaying });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in media update poll:', error);
       }
     }, 500);
 
