@@ -48,43 +48,86 @@ const UnifiedSpeakerSelector = ({
     
     // Initialize Cast API callback
     (window as any).__onGCastApiAvailable = function(isAvailable: boolean) {
+      console.log('Chromecast API available:', isAvailable);
       if (isAvailable) {
+        // Initialize Cast Context
+        try {
+          const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+          if (ctx) {
+            ctx.setOptions({
+              receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+              autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+            });
+            console.log('Chromecast Context initialized');
+          }
+        } catch (e) {
+          console.error('Error initializing Chromecast:', e);
+        }
         discoverSpeakers();
       }
     };
+    
+    // Check if Cast API is already loaded
+    if ((window as any).cast?.framework) {
+      console.log('Chromecast framework already loaded');
+      const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+      if (ctx) {
+        ctx.setOptions({
+          receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+        });
+      }
+      discoverSpeakers();
+    }
     
     // Initial discovery
     discoverSpeakers();
     
     // Monitor Chromecast state changes for automatic updates
-    const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
-    if (ctx) {
-      const onCastStateChanged = () => {
-        // Refresh speakers when Cast state changes
-        discoverSpeakers();
-      };
-      
-      ctx.addEventListener(
-        (window as any).cast.framework.CastContextEventType.CAST_STATE_CHANGED,
-        onCastStateChanged
-      );
-      
-      ctx.addEventListener(
-        (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-        onCastStateChanged
-      );
-      
-      return () => {
-        ctx.removeEventListener(
+    const checkCastState = () => {
+      const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+      if (ctx) {
+        const castState = ctx.getCastState();
+        const CastState = (window as any).cast?.framework?.CastState;
+        console.log('Chromecast state:', castState, CastState);
+        
+        const onCastStateChanged = () => {
+          // Refresh speakers when Cast state changes
+          console.log('Chromecast state changed, refreshing speakers...');
+          discoverSpeakers();
+        };
+        
+        ctx.addEventListener(
           (window as any).cast.framework.CastContextEventType.CAST_STATE_CHANGED,
           onCastStateChanged
         );
-        ctx.removeEventListener(
+        
+        ctx.addEventListener(
           (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
           onCastStateChanged
         );
-      };
-    }
+        
+        return () => {
+          ctx.removeEventListener(
+            (window as any).cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+            onCastStateChanged
+          );
+          ctx.removeEventListener(
+            (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+            onCastStateChanged
+          );
+        };
+      }
+    };
+    
+    // Try to check Cast state after a delay (in case SDK is still loading)
+    const timeout = setTimeout(() => {
+      checkCastState();
+    }, 1000);
+    
+    return () => {
+      clearTimeout(timeout);
+    };
   }, []);
 
   const discoverSpeakers = async (): Promise<number> => {
@@ -92,13 +135,22 @@ const UnifiedSpeakerSelector = ({
     const discoveredSpeakers: Speaker[] = [];
 
     try {
-      // 1. Chromecast / Google Cast - גילוי אוטומטי
+      // 1. Chromecast / Google Cast - תמיד להוסיף אם SDK זמין
+      // Google Cast SDK תמיד זמין בדפדפן Chrome/Edge
+      // גם אם לא נמצאו מכשירים, נוסיף את האפשרות - ה-picker יראה את כל המכשירים
       if ((window as any).cast?.framework || (window as any).chrome?.cast) {
         try {
           const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
           if (ctx) {
-            const castState = ctx.getCastState();
-            const CastState = (window as any).cast?.framework?.CastState;
+            // Initialize Cast Context
+            try {
+              ctx.setOptions({
+                receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+              });
+            } catch (e) {
+              console.log('Error setting Cast options:', e);
+            }
             
             // Check if already connected
             if (chromecast.state.isConnected && chromecast.state.device) {
@@ -107,10 +159,9 @@ const UnifiedSpeakerSelector = ({
                 name: chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast',
                 type: 'Chromecast'
               });
-            } else if (castState !== CastState.NO_DEVICES_AVAILABLE) {
-              // Devices are available (Chromecast, Smart TVs, etc.)
-              // Note: Google Cast SDK requires user interaction to show devices
-              // But we can show a generic option that will trigger the picker
+            } else {
+              // Always show Chromecast option if Cast SDK is available
+              // The picker will show all available devices when clicked
               const session = ctx.getCurrentSession();
               if (session) {
                 const receiver = session.getReceiver();
@@ -122,16 +173,40 @@ const UnifiedSpeakerSelector = ({
               } else {
                 // Show option to connect - when clicked, will show picker with all devices
                 // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
+                // Google Cast SDK will show ALL available devices in the picker
                 discoveredSpeakers.push({
                   id: 'chromecast-connect',
-                  name: 'Chromecast / Smart TV',
+                  name: 'Chromecast / Smart TV / Google Cast',
                   type: 'Chromecast'
                 });
               }
             }
+          } else {
+            // Cast SDK loaded but Context not available yet
+            // Still add the option - it will work when clicked
+            discoveredSpeakers.push({
+              id: 'chromecast-connect',
+              name: 'Chromecast / Smart TV / Google Cast',
+              type: 'Chromecast'
+            });
           }
         } catch (e) {
-          console.log('Chromecast not available:', e);
+          console.error('Chromecast error:', e);
+          // Even if there's an error, try to add the option
+          discoveredSpeakers.push({
+            id: 'chromecast-connect',
+            name: 'Chromecast / Smart TV / Google Cast',
+            type: 'Chromecast'
+          });
+        }
+      } else {
+        // Cast SDK not loaded - check if we're in Chrome/Edge
+        const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+        const isEdge = /Edg/.test(navigator.userAgent);
+        if (isChrome || isEdge) {
+          // Cast SDK should be available in Chrome/Edge
+          // Wait a bit and try again
+          console.log('Waiting for Chromecast SDK to load...');
         }
       }
 
@@ -638,8 +713,19 @@ const UnifiedSpeakerSelector = ({
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {speakers.length === 0 && !isScanning ? (
-          <DropdownMenuItem disabled>
-            לא נמצאו רמקולים
+          <DropdownMenuItem disabled className="flex flex-col gap-1 items-start">
+            <span>לא נמצאו רמקולים</span>
+            <span className="text-xs text-muted-foreground">
+              ודא שהמכשירים באותה רשת WiFi
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Chromecast SDK: {((window as any).cast?.framework || (window as any).chrome?.cast) ? '✅ זמין' : '❌ לא זמין'}
+            </span>
+            {((window as any).cast?.framework || (window as any).chrome?.cast) && (
+              <span className="text-xs text-yellow-500">
+                💡 נסה לבחור "Chromecast / Smart TV" כדי לראות את כל המכשירים
+              </span>
+            )}
           </DropdownMenuItem>
         ) : (
           speakers.map((speaker) => (
