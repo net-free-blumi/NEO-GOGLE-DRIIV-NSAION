@@ -839,65 +839,63 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         }
       }
       
-      // Method 3: session.setVolume (standard method - MUST use callbacks)
-      // NOTE: session.setVolume without callbacks does NOT actually send the command to Chromecast!
+      // Method 3: session.setVolume (standard method - try fire-and-forget first, like useExternalSpeaker.ts)
+      // This is how other apps do it - fire-and-forget without callbacks
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = volLevel;
         vol.muted = stateRef.current.isMuted;
         
-        console.log('📤 Calling session.setVolume with callbacks:', { level: vol.level, muted: vol.muted });
-        
-        // MUST use callbacks - fire-and-forget doesn't work!
-        return new Promise((resolve) => {
-          let resolved = false;
-          
-          // Set a longer timeout - wait for callbacks to fire
-          const timeout = setTimeout(() => {
-            if (!resolved) {
-              console.error('❌ setVolume callbacks never fired - timeout after 10s');
-              console.error('🔍 This means the volume command was NOT sent to Chromecast!');
-              resolved = true;
-              resolve(false);
-            }
-          }, 10000); // Wait 10 seconds for callbacks
-          
-          try {
-            // MUST use callbacks - this is the only way to actually send the command
-            session.setVolume(
-              vol,
-              () => {
-                if (!resolved) {
-                  clearTimeout(timeout);
-                  console.log('✅ Volume set successfully (callbacks fired):', volume);
-                  updateState({ volume, session });
-                  resolved = true;
-                  resolve(true);
-                }
-              },
-              (error: any) => {
-                if (!resolved) {
-                  clearTimeout(timeout);
-                  console.error('❌ Error setting volume (callbacks fired with error):', error);
-                  console.error('Error details:', {
-                    code: error?.code,
-                    description: error?.description,
-                    error: error
-                  });
-                  resolved = true;
-                  resolve(false);
-                }
+        try {
+          // Try fire-and-forget first (like useExternalSpeaker.ts does)
+          // This is how YouTube Music, Spotify, etc. do it
+          session.setVolume(vol);
+          updateState({ volume, session });
+          return true;
+        } catch (e) {
+          console.error('❌ Exception calling setVolume (fire-and-forget):', e);
+          // If fire-and-forget fails, try with callbacks as fallback
+          return new Promise((resolve) => {
+            let resolved = false;
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                console.error('❌ setVolume callbacks never fired - timeout after 5s');
+                resolved = true;
+                resolve(false);
               }
-            );
-          } catch (e) {
-            clearTimeout(timeout);
-            console.error('❌ Exception calling setVolume:', e);
-            if (!resolved) {
-              resolved = true;
-              resolve(false);
+            }, 5000);
+            
+            try {
+              session.setVolume(
+                vol,
+                () => {
+                  if (!resolved) {
+                    clearTimeout(timeout);
+                    console.log('✅ Volume set successfully (callbacks fired):', volume);
+                    updateState({ volume, session });
+                    resolved = true;
+                    resolve(true);
+                  }
+                },
+                (error: any) => {
+                  if (!resolved) {
+                    clearTimeout(timeout);
+                    console.error('❌ Error setting volume (callbacks fired with error):', error);
+                    resolved = true;
+                    resolve(false);
+                  }
+                }
+              );
+            } catch (e2) {
+              clearTimeout(timeout);
+              console.error('❌ Exception calling setVolume with callbacks:', e2);
+              if (!resolved) {
+                resolved = true;
+                resolve(false);
+              }
             }
-          }
-        });
+          });
+        }
       }
       
       // Method 3: Try setting receiver.volume directly if receiver is available (last resort)
