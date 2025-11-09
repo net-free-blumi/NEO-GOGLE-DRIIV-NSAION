@@ -122,9 +122,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
       ctx.setOptions({
         receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        // Enable discovery of all Cast-enabled devices including Smart TVs
+        autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
       });
 
-      // Request session - this will show device picker
+      // Request session - this will show device picker with all available devices
+      // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
       const session = await ctx.requestSession();
       
       if (!session) {

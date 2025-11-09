@@ -87,7 +87,7 @@ const UnifiedSpeakerSelector = ({
     }
   }, []);
 
-  const discoverSpeakers = async () => {
+  const discoverSpeakers = async (): Promise<number> => {
     setIsScanning(true);
     const discoveredSpeakers: Speaker[] = [];
 
@@ -108,7 +108,7 @@ const UnifiedSpeakerSelector = ({
                 type: 'Chromecast'
               });
             } else if (castState !== CastState.NO_DEVICES_AVAILABLE) {
-              // Devices are available - try to discover them
+              // Devices are available (Chromecast, Smart TVs, etc.)
               // Note: Google Cast SDK requires user interaction to show devices
               // But we can show a generic option that will trigger the picker
               const session = ctx.getCurrentSession();
@@ -120,10 +120,11 @@ const UnifiedSpeakerSelector = ({
                   type: 'Chromecast'
                 });
               } else {
-                // Show option to connect - when clicked, will show picker
+                // Show option to connect - when clicked, will show picker with all devices
+                // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
                 discoveredSpeakers.push({
                   id: 'chromecast-connect',
-                  name: 'Chromecast / Google Cast',
+                  name: 'Chromecast / Smart TV',
                   type: 'Chromecast'
                 });
               }
@@ -184,6 +185,7 @@ const UnifiedSpeakerSelector = ({
       sessionStorage.setItem('available_speakers', JSON.stringify(discoveredSpeakers));
       
       // Don't show toast on every discovery - only on manual refresh or errors
+      return discoveredSpeakers.length;
     } catch (error) {
       console.error('Error discovering speakers:', error);
       // Add default option if discovery fails
@@ -192,6 +194,7 @@ const UnifiedSpeakerSelector = ({
         name: 'מכשיר זה',
         type: 'Browser'
       }]);
+      return 1; // At least browser is available
     } finally {
       setIsScanning(false);
     }
@@ -473,12 +476,7 @@ const UnifiedSpeakerSelector = ({
 
   const castToBluetooth = async (speaker: Speaker) => {
     // Bluetooth audio is handled by the browser/OS
-    // We just need to ensure the audio element is set up correctly
-    const audio = audioRef.current || document.querySelector('audio') as HTMLAudioElement;
-    if (!audio) {
-      throw new Error("לא נמצא נגן אודיו פעיל");
-    }
-    
+    // We don't need an audio element - just guide the user
     try {
       // Web Bluetooth API requires user interaction to select devices
       // We can't automatically discover all Bluetooth speakers
@@ -515,7 +513,7 @@ const UnifiedSpeakerSelector = ({
           } else if (bluetoothError.name === 'SecurityError') {
             throw new Error("נדרשות הרשאות Bluetooth");
           } else if (bluetoothError.name === 'AbortError') {
-            // User cancelled - don't show error, just return
+            // User cancelled - don't show error, just return silently
             return;
           } else {
             // Other errors - show message
@@ -591,12 +589,17 @@ const UnifiedSpeakerSelector = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              discoverSpeakers();
+              const count = await discoverSpeakers();
+              toast({
+                title: "סריקה הושלמה",
+                description: `נמצאו ${count} רמקולים`,
+              });
             }}
             className="h-6 px-2"
             disabled={isScanning}
+            title="רענון - חיפוש רמקולים ברשת"
           >
             <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
           </Button>
