@@ -12,7 +12,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useChromecastContext } from "@/contexts/ChromecastContext";
 import { Badge } from "@/components/ui/badge";
-import ChromecastDeviceList from "@/components/ChromecastDeviceList";
 
 interface UnifiedSpeakerSelectorProps {
   selectedSpeaker: string | null;
@@ -40,7 +39,6 @@ const UnifiedSpeakerSelector = ({
   const { toast } = useToast();
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [showChromecastDialog, setShowChromecastDialog] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chromecast = useChromecastContext();
 
@@ -55,7 +53,38 @@ const UnifiedSpeakerSelector = ({
       }
     };
     
+    // Initial discovery
     discoverSpeakers();
+    
+    // Monitor Chromecast state changes for automatic updates
+    const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+    if (ctx) {
+      const onCastStateChanged = () => {
+        // Refresh speakers when Cast state changes
+        discoverSpeakers();
+      };
+      
+      ctx.addEventListener(
+        (window as any).cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+        onCastStateChanged
+      );
+      
+      ctx.addEventListener(
+        (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+        onCastStateChanged
+      );
+      
+      return () => {
+        ctx.removeEventListener(
+          (window as any).cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+          onCastStateChanged
+        );
+        ctx.removeEventListener(
+          (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+          onCastStateChanged
+        );
+      };
+    }
   }, []);
 
   const discoverSpeakers = async () => {
@@ -63,28 +92,45 @@ const UnifiedSpeakerSelector = ({
     const discoveredSpeakers: Speaker[] = [];
 
     try {
-      // 1. Chromecast / Google Cast
+      // 1. Chromecast / Google Cast - גילוי אוטומטי
       if ((window as any).cast?.framework || (window as any).chrome?.cast) {
         try {
           const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
           if (ctx) {
+            const castState = ctx.getCastState();
+            const CastState = (window as any).cast?.framework?.CastState;
+            
             // Check if already connected
             if (chromecast.state.isConnected && chromecast.state.device) {
               discoveredSpeakers.push({
                 id: `chromecast-${chromecast.state.device.id}`,
-                name: chromecast.state.device.name,
+                name: chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast',
                 type: 'Chromecast'
               });
-            } else {
-              discoveredSpeakers.push({
-                id: 'chromecast-available',
-                name: 'Chromecast / Google Cast',
-                type: 'Chromecast'
-              });
+            } else if (castState !== CastState.NO_DEVICES_AVAILABLE) {
+              // Devices are available - try to discover them
+              // Note: Google Cast SDK requires user interaction to show devices
+              // But we can show a generic option that will trigger the picker
+              const session = ctx.getCurrentSession();
+              if (session) {
+                const receiver = session.getReceiver();
+                discoveredSpeakers.push({
+                  id: `chromecast-${receiver.friendlyName || 'connected'}`,
+                  name: receiver.friendlyName || 'Chromecast',
+                  type: 'Chromecast'
+                });
+              } else {
+                // Show option to connect - when clicked, will show picker
+                discoveredSpeakers.push({
+                  id: 'chromecast-connect',
+                  name: 'Chromecast / Google Cast',
+                  type: 'Chromecast'
+                });
+              }
             }
           }
         } catch (e) {
-          console.log('Chromecast not available');
+          console.log('Chromecast not available:', e);
         }
       }
 
@@ -137,18 +183,7 @@ const UnifiedSpeakerSelector = ({
       // Store speakers list in sessionStorage for MusicPlayer to access
       sessionStorage.setItem('available_speakers', JSON.stringify(discoveredSpeakers));
       
-      if (discoveredSpeakers.length === 0) {
-        toast({
-          title: "לא נמצאו רמקולים",
-          description: "ודא שהרמקולים באותה רשת WiFi",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "גילוי הושלם",
-          description: `נמצאו ${discoveredSpeakers.length} רמקולים`,
-        });
-      }
+      // Don't show toast on every discovery - only on manual refresh or errors
     } catch (error) {
       console.error('Error discovering speakers:', error);
       // Add default option if discovery fails
@@ -308,15 +343,29 @@ const UnifiedSpeakerSelector = ({
 
       switch (speaker.type) {
         case 'Chromecast':
-          // If already connected, just use it
+          // Connect to Chromecast - this will show the native picker
+          // But we'll handle it gracefully
           if (chromecast.state.isConnected) {
             // Already connected, just load media if needed
             if (mediaUrl) {
               await chromecast.loadMedia(mediaUrl, title, contentType);
             }
           } else {
-            // Open device list dialog
-            setShowChromecastDialog(true);
+            // Connect - this will show the native picker
+            try {
+              const connected = await chromecast.connect();
+              if (connected && mediaUrl) {
+                // Load media after connection
+                await chromecast.loadMedia(mediaUrl, title, contentType);
+              }
+              // Refresh speakers list after connection
+              setTimeout(() => discoverSpeakers(), 1000);
+            } catch (error: any) {
+              // User cancelled - don't show error
+              if (error.code !== 'cancel' && error.name !== 'AbortError') {
+                throw error;
+              }
+            }
           }
           break;
         case 'AirPlay':
@@ -570,8 +619,15 @@ const UnifiedSpeakerSelector = ({
                   <span className="font-medium">{speaker.name}</span>
                   <span className="text-xs text-muted-foreground">
                     {speaker.type}
-                    {speaker.type === 'Chromecast' && chromecast.state.isConnected && chromecast.state.device?.id === speaker.id && (
-                      <span className="text-green-500 mr-1"> • מחובר</span>
+                    {speaker.type === 'Chromecast' && (
+                      <>
+                        {chromecast.state.isConnected && chromecast.state.device && (
+                          <span className="text-green-500 mr-1"> • מחובר</span>
+                        )}
+                        {!chromecast.state.isConnected && speaker.id === 'chromecast-connect' && (
+                          <span className="text-yellow-500 mr-1"> • לחץ לחיבור</span>
+                        )}
+                      </>
                     )}
                   </span>
                 </div>
@@ -604,23 +660,6 @@ const UnifiedSpeakerSelector = ({
           </>
         )}
       </DropdownMenuContent>
-      
-      {/* Chromecast Device List Dialog */}
-      <ChromecastDeviceList
-        isOpen={showChromecastDialog}
-        onOpenChange={setShowChromecastDialog}
-        onDeviceSelect={async (deviceId) => {
-          // Device selected, connect and load media
-          if (mediaUrl) {
-            await chromecast.loadMedia(mediaUrl, title, contentType);
-          }
-          // Update selected speaker
-          const chromecastSpeaker = speakers.find(s => s.type === 'Chromecast');
-          if (chromecastSpeaker) {
-            onSpeakerChange(chromecastSpeaker.id);
-          }
-        }}
-      />
     </DropdownMenu>
   );
 };
