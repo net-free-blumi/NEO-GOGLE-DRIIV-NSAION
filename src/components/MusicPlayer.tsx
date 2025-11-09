@@ -797,7 +797,7 @@ const MusicPlayer = ({
               max={duration || 100}
               step={1}
               onValueChange={handleSeek}
-              className="w-full cursor-pointer"
+              className="w-full cursor-pointer touch-manipulation"
               disabled={duration === 0 || isLoading}
             />
             <div className="flex justify-between text-xs text-muted-foreground mt-1">
@@ -814,12 +814,16 @@ const MusicPlayer = ({
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
             {/* Song Info */}
-            <div className="flex items-center gap-4 min-w-0 flex-1">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
               <div 
-                className="w-14 h-14 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0 shadow-lg cursor-pointer hover:scale-105 transition-transform"
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0 shadow-lg cursor-pointer hover:scale-105 transition-transform touch-manipulation"
                 onClick={() => setIsFullscreen(true)}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  setIsFullscreen(true);
+                }}
                 title="פתח במסך מלא"
               >
                 {song.coverUrl ? (
@@ -829,35 +833,41 @@ const MusicPlayer = ({
                     className="w-full h-full rounded-lg object-cover"
                   />
                 ) : (
-                  <span className="text-2xl">🎵</span>
+                  <span className="text-xl sm:text-2xl">🎵</span>
                 )}
               </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-foreground truncate">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">
                   {song.title}
                 </h3>
-                <p className="text-sm text-muted-foreground truncate">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">
                   {song.artist}
                 </p>
                 {selectedSpeaker && (
-                  <p className="text-xs text-primary flex items-center gap-1 mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                    מנגן ב-{isChromecastActive && chromecast.state.device 
-                      ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
-                      : selectedSpeaker}
+                  <p className="text-[10px] sm:text-xs text-primary flex items-center gap-1 mt-0.5">
+                    <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                    <span className="truncate">
+                      מנגן ב-{isChromecastActive && chromecast.state.device 
+                        ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
+                        : selectedSpeaker}
+                    </span>
                   </p>
                 )}
               </div>
             </div>
 
             {/* Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 flex-shrink-0">
               {onRepeatModeChange && (
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleRepeatModeClick}
-                  className="hover:bg-secondary/80 transition-colors"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    handleRepeatModeClick();
+                  }}
+                  className="w-8 h-8 sm:w-10 sm:h-10 hover:bg-secondary/80 transition-colors touch-manipulation"
                   title={
                     repeatMode === 'none' ? 'לא חוזר' :
                     repeatMode === 'one' ? 'חוזר על שיר אחד' :
@@ -927,17 +937,21 @@ const MusicPlayer = ({
             </div>
 
             {/* Volume Control */}
-            <div className="flex items-center gap-2 flex-1 justify-end">
+            <div className="flex items-center gap-1 sm:gap-2 flex-1 justify-end">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsMuted(!isMuted)}
-                className="flex-shrink-0"
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  setIsMuted(!isMuted);
+                }}
+                className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 touch-manipulation"
               >
                 {isMuted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5" />
+                  <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : (
-                  <Volume2 className="w-5 h-5" />
+                  <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </Button>
               <Slider
@@ -951,7 +965,7 @@ const MusicPlayer = ({
                     controlExternalSpeaker('volume', v[0]);
                   }
                 }}
-                className="w-24 cursor-pointer"
+                className="w-20 sm:w-24 cursor-pointer touch-manipulation"
               />
             </div>
           </div>
@@ -961,7 +975,7 @@ const MusicPlayer = ({
       {/* Fullscreen Player Modal */}
       {isFullscreen && (
         <div 
-          className="fixed inset-0 bg-background z-[100] flex flex-col items-center justify-center p-4 md:p-8"
+          className="fixed inset-0 bg-background z-[100] flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 overflow-y-auto"
           onClick={(e) => {
             // Close on background click
             if (e.target === e.currentTarget) {
@@ -974,10 +988,14 @@ const MusicPlayer = ({
             variant="ghost"
             size="icon"
             onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 right-4 md:top-8 md:right-8 z-10"
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              setIsFullscreen(false);
+            }}
+            className="absolute top-2 right-2 sm:top-4 sm:right-4 md:top-8 md:right-8 z-10 w-10 h-10 sm:w-12 sm:h-12 touch-manipulation"
             title="סגור"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </Button>
 
           <div className="w-full max-w-4xl flex flex-col items-center gap-6 md:gap-8">
@@ -995,19 +1013,21 @@ const MusicPlayer = ({
             </div>
 
             {/* Song Info */}
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl md:text-4xl font-bold text-foreground">
+            <div className="text-center space-y-2 px-4">
+              <h2 className="text-xl sm:text-2xl md:text-4xl font-bold text-foreground break-words">
                 {song.title}
               </h2>
-              <p className="text-lg md:text-xl text-muted-foreground">
+              <p className="text-base sm:text-lg md:text-xl text-muted-foreground break-words">
                 {song.artist}
               </p>
               {selectedSpeaker && (
-                <p className="text-sm md:text-base text-primary flex items-center justify-center gap-2 mt-2">
-                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                  מנגן ב-{isChromecastActive && chromecast.state.device 
-                    ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
-                    : selectedSpeaker}
+                <p className="text-xs sm:text-sm md:text-base text-primary flex items-center justify-center gap-2 mt-2">
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                  <span className="truncate max-w-[80vw] sm:max-w-none">
+                    מנגן ב-{isChromecastActive && chromecast.state.device 
+                      ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
+                      : selectedSpeaker}
+                  </span>
                 </p>
               )}
             </div>
@@ -1045,7 +1065,11 @@ const MusicPlayer = ({
                     variant="ghost"
                     size="icon"
                     onClick={handleRepeatModeClick}
-                    className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      handleRepeatModeClick();
+                    }}
+                    className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
                     title={
                       repeatMode === 'none' ? 'לא חוזר' :
                       repeatMode === 'one' ? 'חוזר על שיר אחד' :
@@ -1074,23 +1098,31 @@ const MusicPlayer = ({
                   variant="ghost"
                   size="icon"
                   onClick={onPrevious}
-                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onPrevious();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
                 >
-                  <SkipBack className="w-5 h-5 md:w-6 md:h-6" />
+                  <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                 </Button>
                 <Button
                   variant="default"
                   size="icon"
                   onClick={onPlayPause}
-                  className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 transition-all shadow-[var(--shadow-player)]"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onPlayPause();
+                  }}
+                  className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-95 transition-all shadow-[var(--shadow-player)] touch-manipulation"
                   disabled={isLoading && !isPlaying}
                 >
                   {(isLoading && !isPlaying) ? (
-                    <Loader2 className="w-8 h-8 md:w-10 md:h-10 animate-spin" />
+                    <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 animate-spin" />
                   ) : isPlaying ? (
-                    <Pause className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" />
+                    <Pause className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
                   ) : (
-                    <Play className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" />
+                    <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
                   )}
                 </Button>
                 {onStop && (
@@ -1098,29 +1130,41 @@ const MusicPlayer = ({
                     variant="ghost"
                     size="icon"
                     onClick={onStop}
-                    className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      onStop();
+                    }}
+                    className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
                     title="עצירה לגמרי"
                   >
-                    <Square className="w-5 h-5 md:w-6 md:h-6" />
+                    <Square className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={onNext}
-                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onNext();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
                 >
-                  <SkipForward className="w-5 h-5 md:w-6 md:h-6" />
+                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                 </Button>
               </div>
 
               {/* Volume Control */}
-              <div className="flex items-center gap-3 md:gap-4 w-full max-w-xs">
+              <div className="flex items-center gap-2 sm:gap-3 md:gap-4 w-full max-w-xs">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => setIsMuted(!isMuted)}
-                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    setIsMuted(!isMuted);
+                  }}
+                  className="w-10 h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation flex-shrink-0"
                 >
                   {isMuted ? (
                     <VolumeX className="w-5 h-5 md:w-6 md:h-6" />
@@ -1139,9 +1183,9 @@ const MusicPlayer = ({
                       controlExternalSpeaker('volume', v[0]);
                     }
                   }}
-                  className="flex-1 cursor-pointer"
+                  className="flex-1 cursor-pointer touch-manipulation"
                 />
-                <span className="text-sm md:text-base text-muted-foreground w-12 text-center">
+                <span className="text-sm md:text-base text-muted-foreground w-12 text-center flex-shrink-0">
                   {volume}%
                 </span>
               </div>
