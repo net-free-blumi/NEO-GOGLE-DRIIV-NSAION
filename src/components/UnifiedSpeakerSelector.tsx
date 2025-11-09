@@ -144,20 +144,25 @@ const UnifiedSpeakerSelector = ({
         });
       }
 
-      // 3. DLNA/UPnP Discovery
-      try {
-        const dlnaSpeakers = await discoverDLNASpeakers();
-        discoveredSpeakers.push(...dlnaSpeakers);
-      } catch (e) {
-        console.log('DLNA discovery error:', e);
-      }
+      // 3. DLNA/UPnP Discovery (only in local development)
+      // Note: UPnP/DLNA discovery requires local network access
+      // It doesn't work from Netlify or other cloud services
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocalDev) {
+        try {
+          const dlnaSpeakers = await discoverDLNASpeakers();
+          discoveredSpeakers.push(...dlnaSpeakers);
+        } catch (e) {
+          console.log('DLNA discovery error:', e);
+        }
 
-      // 4. Sonos Discovery (via UPnP)
-      try {
-        const sonosSpeakers = await discoverSonosSpeakers();
-        discoveredSpeakers.push(...sonosSpeakers);
-      } catch (e) {
-        console.log('Sonos discovery error:', e);
+        // 4. Sonos Discovery (via UPnP) - only in local development
+        try {
+          const sonosSpeakers = await discoverSonosSpeakers();
+          discoveredSpeakers.push(...sonosSpeakers);
+        } catch (e) {
+          console.log('Sonos discovery error:', e);
+        }
       }
 
       // 5. Bluetooth (if available)
@@ -205,35 +210,44 @@ const UnifiedSpeakerSelector = ({
     const dlnaSpeakers: Speaker[] = [];
     
     try {
-      // Try to discover via backend service (local development)
-      const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
+      // Check if we're in local development (has local server)
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       
-      try {
-        const response = await fetch(discoveryUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          // Add timeout
-          signal: AbortSignal.timeout(6000),
-        });
+      if (isLocalDev) {
+        // Try to discover via local backend service
+        const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
         
-        if (response.ok) {
-          const data = await response.json();
-          if (data.speakers && Array.isArray(data.speakers)) {
-            dlnaSpeakers.push(...data.speakers.map((s: any) => ({
-              id: s.id || `dlna-${s.name || s.address}`,
-              name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
-              type: 'DLNA' as const,
-              url: s.url,
-              friendlyName: s.friendlyName || s.name,
-              address: s.address,
-            })));
+        try {
+          const response = await fetch(discoveryUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(6000),
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.speakers && Array.isArray(data.speakers)) {
+              dlnaSpeakers.push(...data.speakers.map((s: any) => ({
+                id: s.id || `dlna-${s.name || s.address}`,
+                name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
+                type: 'DLNA' as const,
+                url: s.url,
+                friendlyName: s.friendlyName || s.name,
+                address: s.address,
+              })));
+            }
+          }
+        } catch (fetchError: any) {
+          // If backend service is not available, log but don't fail
+          if (fetchError.name !== 'AbortError') {
+            console.log('DLNA discovery service not available - make sure to run: npm run dev:all');
           }
         }
-      } catch (fetchError: any) {
-        // If backend service is not available, log but don't fail
-        if (fetchError.name !== 'AbortError') {
-          console.log('DLNA discovery service not available:', fetchError.message);
-        }
+      } else {
+        // In production (Netlify), UPnP/DLNA discovery doesn't work
+        // because it requires local network access
+        // We'll rely on Chromecast SDK instead
+        console.log('DLNA discovery not available in production - use Chromecast SDK instead');
       }
       
     } catch (e) {
@@ -248,33 +262,41 @@ const UnifiedSpeakerSelector = ({
     const sonosSpeakers: Speaker[] = [];
     
     try {
-      // Sonos uses UPnP for discovery
-      const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=sonos`;
+      // Check if we're in local development
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       
-      try {
-        const response = await fetch(discoveryUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(6000),
-        });
+      if (isLocalDev) {
+        // Sonos uses UPnP for discovery
+        const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=sonos`;
         
-        if (response.ok) {
-          const data = await response.json();
-          if (data.speakers && Array.isArray(data.speakers)) {
-            sonosSpeakers.push(...data.speakers.map((s: any) => ({
-              id: s.id || `sonos-${s.name || s.address}`,
-              name: s.name || s.friendlyName || 'Sonos Speaker',
-              type: 'Sonos' as const,
-              url: s.url,
-              friendlyName: s.friendlyName || s.name,
-              address: s.address,
-            })));
+        try {
+          const response = await fetch(discoveryUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(6000),
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.speakers && Array.isArray(data.speakers)) {
+              sonosSpeakers.push(...data.speakers.map((s: any) => ({
+                id: s.id || `sonos-${s.name || s.address}`,
+                name: s.name || s.friendlyName || 'Sonos Speaker',
+                type: 'Sonos' as const,
+                url: s.url,
+                friendlyName: s.friendlyName || s.name,
+                address: s.address,
+              })));
+            }
+          }
+        } catch (fetchError: any) {
+          if (fetchError.name !== 'AbortError') {
+            console.log('Sonos discovery service not available - make sure to run: npm run dev:all');
           }
         }
-      } catch (fetchError: any) {
-        if (fetchError.name !== 'AbortError') {
-          console.log('Sonos discovery service not available:', fetchError.message);
-        }
+      } else {
+        // In production, Sonos discovery doesn't work
+        console.log('Sonos discovery not available in production - use Chromecast SDK instead');
       }
       
     } catch (e) {
@@ -440,6 +462,13 @@ const UnifiedSpeakerSelector = ({
     }
 
     try {
+      // Check if we're in local development
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      if (!isLocalDev) {
+        throw new Error("DLNA casting דורש שרת מקומי. הרץ: npm run dev:all");
+      }
+
       // Cast to DLNA device via backend
       const castUrl = `http://${window.location.hostname}:3001/api/cast-dlna`;
       const response = await fetch(castUrl, {
