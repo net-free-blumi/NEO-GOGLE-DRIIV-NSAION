@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, X, Maximize2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, X, Maximize2, Cast } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Song } from "@/pages/Index";
 import { useExternalSpeaker } from "@/hooks/useExternalSpeaker";
+import { useChromecastContext } from "@/contexts/ChromecastContext";
+import { Badge } from "@/components/ui/badge";
 
 interface MusicPlayerProps {
   song: Song;
@@ -47,15 +49,64 @@ const MusicPlayer = ({
     }
   });
   
-  // Use external speaker hook
+  // Use external speaker hook (for non-Chromecast speakers)
   const { isExternalSpeakerActive, controlExternalSpeaker, stopLocalAudio } = useExternalSpeaker(
     selectedSpeaker,
     speakers
   );
 
+  // Use Chromecast context
+  const chromecast = useChromecastContext();
+  
+  // Check if Chromecast is the selected speaker
+  const selectedSpeakerData = speakers.find((s: any) => s.id === selectedSpeaker);
+  const isChromecastActive = selectedSpeakerData?.type === 'Chromecast' && chromecast.state.isConnected;
+
+  // Load song to Chromecast if connected
+  useEffect(() => {
+    if (isChromecastActive && song.url) {
+      chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg');
+    }
+  }, [song.id, song.url, isChromecastActive]);
+
+  // Sync Chromecast state with local state
+  useEffect(() => {
+    if (isChromecastActive) {
+      // Update current time from Chromecast
+      if (chromecast.state.currentTime !== currentTime) {
+        setCurrentTime(chromecast.state.currentTime);
+      }
+      
+      // Update duration from Chromecast
+      if (chromecast.state.duration > 0 && chromecast.state.duration !== duration) {
+        setDuration(chromecast.state.duration);
+      }
+      
+      // Update volume from Chromecast
+      if (chromecast.state.volume !== volume) {
+        setVolume(chromecast.state.volume);
+      }
+      
+      // Update muted state from Chromecast
+      if (chromecast.state.isMuted !== isMuted) {
+        setIsMuted(chromecast.state.isMuted);
+      }
+    }
+  }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration, chromecast.state.volume, chromecast.state.isMuted, chromecast.state.isPlaying]);
+
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
     if (!audioRef.current || !song.url) return;
+    
+    // Skip local audio setup if Chromecast is active
+    if (isChromecastActive) {
+      // Stop local audio when Chromecast is active
+      const audio = audioRef.current;
+      if (!audio.paused) {
+        audio.pause();
+      }
+      return;
+    }
 
     const audio = audioRef.current;
     
@@ -188,19 +239,29 @@ const MusicPlayer = ({
 
   // Stop local audio when external speaker is active
   useEffect(() => {
-    if (isExternalSpeakerActive && audioRef.current) {
+    if ((isExternalSpeakerActive || isChromecastActive) && audioRef.current) {
       const audio = audioRef.current;
       if (!audio.paused) {
         audio.pause();
       }
     }
-  }, [isExternalSpeakerActive, selectedSpeaker]);
+  }, [isExternalSpeakerActive, isChromecastActive, selectedSpeaker]);
 
   // Handle play/pause with better buffering
   useEffect(() => {
     if (!audioRef.current) return;
     
     const audio = audioRef.current;
+    
+    // If Chromecast is active, control it instead of local audio
+    if (isChromecastActive) {
+      if (isPlaying) {
+        chromecast.play();
+      } else {
+        chromecast.pause();
+      }
+      return; // Don't control local audio when Chromecast is active
+    }
     
     // If external speaker is active, control it instead of local audio
     if (isExternalSpeakerActive) {
@@ -545,6 +606,12 @@ const MusicPlayer = ({
   }, [repeatMode, onNext]);
 
   useEffect(() => {
+    // If Chromecast is active, send volume command to it
+    if (isChromecastActive) {
+      chromecast.setVolume(volume);
+      return;
+    }
+    
     // If external speaker is active, send volume command to it
     if (isExternalSpeakerActive) {
       controlExternalSpeaker('volume', volume);
@@ -555,13 +622,20 @@ const MusicPlayer = ({
     if (audioRef.current) {
       audioRef.current.volume = volume / 100;
     }
-  }, [volume, isExternalSpeakerActive]);
+  }, [volume, isExternalSpeakerActive, isChromecastActive]);
 
   useEffect(() => {
+    // If Chromecast is active, send mute command to it
+    if (isChromecastActive) {
+      chromecast.setMuted(isMuted);
+      return;
+    }
+    
+    // Otherwise, control local audio
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
     }
-  }, [isMuted]);
+  }, [isMuted, isChromecastActive]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
@@ -571,6 +645,13 @@ const MusicPlayer = ({
 
   const handleSeek = (value: number[]) => {
     const seekTime = value[0];
+    
+    // If Chromecast is active, send seek command to it
+    if (isChromecastActive) {
+      chromecast.seek(seekTime);
+      setCurrentTime(seekTime);
+      return;
+    }
     
     // If external speaker is active, send seek command to it
     if (isExternalSpeakerActive) {
@@ -612,6 +693,16 @@ const MusicPlayer = ({
 
       <div className="fixed bottom-0 left-0 right-0 bg-[hsl(var(--player-bg))] border-t border-border backdrop-blur-xl z-50">
         <div className="container mx-auto px-4 py-4">
+          {/* Chromecast Connection Status */}
+          {isChromecastActive && chromecast.state.device && (
+            <div className="mb-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Cast className="w-3 h-3 text-green-500" />
+              <span>מחובר ל-{chromecast.state.device.name}</span>
+              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                פעיל
+              </Badge>
+            </div>
+          )}
           {/* Progress Bar */}
           <div className="mb-4">
             <Slider

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Radio, Check, Loader2, RefreshCw, Cast, Airplay, Bluetooth, Wifi } from "lucide-react";
+import { Radio, Check, Loader2, RefreshCw, Cast, Airplay, Bluetooth, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useChromecastContext } from "@/contexts/ChromecastContext";
+import { Badge } from "@/components/ui/badge";
 
 interface UnifiedSpeakerSelectorProps {
   selectedSpeaker: string | null;
@@ -38,6 +40,7 @@ const UnifiedSpeakerSelector = ({
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const chromecast = useChromecastContext();
 
   useEffect(() => {
     // Get audio element reference
@@ -63,11 +66,20 @@ const UnifiedSpeakerSelector = ({
         try {
           const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
           if (ctx) {
-            discoveredSpeakers.push({
-              id: 'chromecast-default',
-              name: 'Chromecast / Google Cast',
-              type: 'Chromecast'
-            });
+            // Check if already connected
+            if (chromecast.state.isConnected && chromecast.state.device) {
+              discoveredSpeakers.push({
+                id: `chromecast-${chromecast.state.device.id}`,
+                name: chromecast.state.device.name,
+                type: 'Chromecast'
+              });
+            } else {
+              discoveredSpeakers.push({
+                id: 'chromecast-available',
+                name: 'Chromecast / Google Cast',
+                type: 'Chromecast'
+              });
+            }
           }
         } catch (e) {
           console.log('Chromecast not available');
@@ -310,7 +322,10 @@ const UnifiedSpeakerSelector = ({
           break;
         case 'Browser':
         default:
-          // Play on current device
+          // Disconnect Chromecast if switching to browser
+          if (chromecast.state.isConnected) {
+            await chromecast.disconnect();
+          }
           break;
       }
       
@@ -334,37 +349,21 @@ const UnifiedSpeakerSelector = ({
 
   const castToChromecast = async () => {
     try {
-      const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
-      if (!ctx) {
-        throw new Error("Chromecast לא זמין");
+      // Connect to Chromecast if not already connected
+      if (!chromecast.state.isConnected) {
+        const connected = await chromecast.connect();
+        if (!connected) {
+          throw new Error("לא ניתן להתחבר ל-Chromecast");
+        }
       }
 
-      ctx.setOptions({
-        receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-      });
-
-      const session = ctx.getCurrentSession() || (await ctx.requestSession().catch(() => null));
-      if (!session) {
-        throw new Error("לא ניתן להתחבר ל-Chromecast");
+      // Load media if URL provided
+      if (mediaUrl) {
+        const loaded = await chromecast.loadMedia(mediaUrl, title, contentType);
+        if (!loaded) {
+          throw new Error("לא ניתן לשדר ל-Chromecast");
+        }
       }
-
-      if (!mediaUrl) {
-        throw new Error("אין שיר נבחר");
-      }
-
-      // Get token for Netlify functions
-      const accessToken = sessionStorage.getItem('gd_access_token');
-      const finalUrl = accessToken && mediaUrl.includes('netlify') 
-        ? `${mediaUrl}?token=${encodeURIComponent(accessToken)}`
-        : mediaUrl;
-
-      const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(finalUrl, contentType);
-      mediaInfo.metadata = new (window as any).chrome.cast.media.MusicTrackMediaMetadata();
-      mediaInfo.metadata.title = title;
-      mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.BUFFERED;
-
-      const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
-      await session.loadMedia(request);
     } catch (e: any) {
       throw new Error(e?.message || "לא ניתן לשדר ל-Chromecast");
     }
@@ -497,13 +496,16 @@ const UnifiedSpeakerSelector = ({
     (s) => s.id === selectedSpeaker
   );
 
+  // Check if Chromecast is connected
+  const isChromecastConnected = selectedSpeakerData?.type === 'Chromecast' && chromecast.state.isConnected;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant={selectedSpeaker ? "default" : "outline"}
           size="sm"
-          className="gap-2"
+          className="gap-2 relative"
         >
           {isScanning ? (
             <>
@@ -514,6 +516,11 @@ const UnifiedSpeakerSelector = ({
             <>
               {selectedSpeakerData ? getSpeakerIcon(selectedSpeakerData.type) : <Radio className="w-4 h-4" />}
               {selectedSpeakerData ? selectedSpeakerData.name : "בחר רמקול"}
+              {isChromecastConnected && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  מחובר
+                </Badge>
+              )}
             </>
           )}
         </Button>
@@ -552,6 +559,9 @@ const UnifiedSpeakerSelector = ({
                   <span className="font-medium">{speaker.name}</span>
                   <span className="text-xs text-muted-foreground">
                     {speaker.type}
+                    {speaker.type === 'Chromecast' && chromecast.state.isConnected && chromecast.state.device?.id === speaker.id && (
+                      <span className="text-green-500 mr-1"> • מחובר</span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -565,7 +575,11 @@ const UnifiedSpeakerSelector = ({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => {
+              onClick={async () => {
+                const speaker = speakers.find((s) => s.id === selectedSpeaker);
+                if (speaker?.type === 'Chromecast' && chromecast.state.isConnected) {
+                  await chromecast.disconnect();
+                }
                 onSpeakerChange(null);
                 toast({
                   title: "רמקול מנותק",
