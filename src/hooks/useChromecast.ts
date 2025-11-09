@@ -70,17 +70,36 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     }
 
     try {
-      // Request session to trigger device discovery
-      // The Cast SDK will show a device picker
       const devices: ChromecastDevice[] = [];
       
-      // We can't directly enumerate devices without user interaction
-      // But we can check if Cast is available
-      if (ctx.getCastState() !== (window as any).cast.framework.CastState.NO_DEVICES_AVAILABLE) {
-        devices.push({
-          id: 'chromecast-available',
-          name: 'Chromecast / Google Cast',
-        });
+      // Check Cast state - if devices are available, we can show them
+      const castState = ctx.getCastState();
+      const CastState = (window as any).cast?.framework?.CastState;
+      
+      if (!CastState) {
+        return [];
+      }
+
+      // If devices are available, we'll use the CastButton to show them
+      // But we can't enumerate them directly without user interaction
+      // So we'll return a generic entry that will trigger the CastButton
+      if (castState !== CastState.NO_DEVICES_AVAILABLE) {
+        // Check if there's an active session with a device
+        const session = ctx.getCurrentSession();
+        if (session) {
+          const receiver = session.getReceiver();
+          devices.push({
+            id: receiver.friendlyName || 'chromecast-connected',
+            name: receiver.friendlyName || 'Chromecast',
+            friendlyName: receiver.friendlyName,
+          });
+        } else {
+          // Devices are available but not connected
+          devices.push({
+            id: 'chromecast-available',
+            name: 'Chromecast / Google Cast',
+          });
+        }
       }
 
       return devices;

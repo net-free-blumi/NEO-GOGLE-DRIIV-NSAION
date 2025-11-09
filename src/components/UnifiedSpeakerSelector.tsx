@@ -12,6 +12,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useChromecastContext } from "@/contexts/ChromecastContext";
 import { Badge } from "@/components/ui/badge";
+import ChromecastDeviceList from "@/components/ChromecastDeviceList";
 
 interface UnifiedSpeakerSelectorProps {
   selectedSpeaker: string | null;
@@ -39,6 +40,7 @@ const UnifiedSpeakerSelector = ({
   const { toast } = useToast();
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [showChromecastDialog, setShowChromecastDialog] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chromecast = useChromecastContext();
 
@@ -306,7 +308,16 @@ const UnifiedSpeakerSelector = ({
 
       switch (speaker.type) {
         case 'Chromecast':
-          await castToChromecast();
+          // If already connected, just use it
+          if (chromecast.state.isConnected) {
+            // Already connected, just load media if needed
+            if (mediaUrl) {
+              await chromecast.loadMedia(mediaUrl, title, contentType);
+            }
+          } else {
+            // Open device list dialog
+            setShowChromecastDialog(true);
+          }
           break;
         case 'AirPlay':
           castToAirPlay();
@@ -593,6 +604,23 @@ const UnifiedSpeakerSelector = ({
           </>
         )}
       </DropdownMenuContent>
+      
+      {/* Chromecast Device List Dialog */}
+      <ChromecastDeviceList
+        isOpen={showChromecastDialog}
+        onOpenChange={setShowChromecastDialog}
+        onDeviceSelect={async (deviceId) => {
+          // Device selected, connect and load media
+          if (mediaUrl) {
+            await chromecast.loadMedia(mediaUrl, title, contentType);
+          }
+          // Update selected speaker
+          const chromecastSpeaker = speakers.find(s => s.type === 'Chromecast');
+          if (chromecastSpeaker) {
+            onSpeakerChange(chromecastSpeaker.id);
+          }
+        }}
+      />
     </DropdownMenu>
   );
 };

@@ -8,6 +8,7 @@ import UnifiedSpeakerSelector from "@/components/UnifiedSpeakerSelector";
 import GoogleDriveConnect, { loadSongsFromDrive } from "@/components/GoogleDriveConnect";
 import SettingsMenu from "@/components/SettingsMenu";
 import { useToast } from "@/hooks/use-toast";
+import VersionBadge from "@/components/VersionBadge";
 
 export interface Song {
   id: string;
@@ -258,6 +259,9 @@ const Index = () => {
           onRepeatModeChange={setRepeatMode}
         />
       )}
+
+      {/* Version Badge */}
+      <VersionBadge />
     </div>
   );
 };
