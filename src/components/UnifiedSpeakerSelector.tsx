@@ -200,47 +200,41 @@ const UnifiedSpeakerSelector = ({
     }
   };
 
-  // DLNA/UPnP Discovery
+  // DLNA/UPnP Discovery - כמו BubbleUPnP
   const discoverDLNASpeakers = async (): Promise<Speaker[]> => {
     const dlnaSpeakers: Speaker[] = [];
     
     try {
-      // Try to discover via Netlify function or backend service
-      const isNetlify = window.location.hostname.includes('netlify.app');
-      const discoveryUrl = isNetlify
-        ? `${window.location.origin}/.netlify/functions/discover-speakers?type=dlna`
-        : `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
+      // Try to discover via backend service (local development)
+      const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
       
       try {
         const response = await fetch(discoveryUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
+          // Add timeout
+          signal: AbortSignal.timeout(6000),
         });
         
         if (response.ok) {
           const data = await response.json();
           if (data.speakers && Array.isArray(data.speakers)) {
             dlnaSpeakers.push(...data.speakers.map((s: any) => ({
-              id: s.id || `dlna-${s.name}`,
-              name: s.name || s.friendlyName || 'DLNA Device',
+              id: s.id || `dlna-${s.name || s.address}`,
+              name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
               type: 'DLNA' as const,
               url: s.url,
-              friendlyName: s.friendlyName,
+              friendlyName: s.friendlyName || s.name,
+              address: s.address,
             })));
           }
         }
-      } catch (fetchError) {
-        // If backend service is not available, try WebRTC-based discovery
-        // or use a browser extension if available
-        console.log('DLNA discovery service not available, trying alternative methods...');
-        
-        // Alternative: Try to discover via WebRTC or browser extension
-        // This would require additional setup
+      } catch (fetchError: any) {
+        // If backend service is not available, log but don't fail
+        if (fetchError.name !== 'AbortError') {
+          console.log('DLNA discovery service not available:', fetchError.message);
+        }
       }
-      
-      // If no speakers found via service, try local discovery
-      // Note: This is limited in browser due to CORS and SSDP requirements
-      // For full DLNA support, a backend service or browser extension is recommended
       
     } catch (e) {
       console.log('DLNA discovery error:', e);
@@ -249,43 +243,38 @@ const UnifiedSpeakerSelector = ({
     return dlnaSpeakers;
   };
 
-  // Sonos Discovery
+  // Sonos Discovery - גם דרך UPnP
   const discoverSonosSpeakers = async (): Promise<Speaker[]> => {
     const sonosSpeakers: Speaker[] = [];
     
     try {
       // Sonos uses UPnP for discovery
-      // Try to discover via Netlify function or backend service
-      const isNetlify = window.location.hostname.includes('netlify.app');
-      const discoveryUrl = isNetlify
-        ? `${window.location.origin}/.netlify/functions/discover-speakers?type=sonos`
-        : `http://${window.location.hostname}:3001/api/discover-speakers?type=sonos`;
+      const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=sonos`;
       
       try {
         const response = await fetch(discoveryUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(6000),
         });
         
         if (response.ok) {
           const data = await response.json();
           if (data.speakers && Array.isArray(data.speakers)) {
             sonosSpeakers.push(...data.speakers.map((s: any) => ({
-              id: s.id || `sonos-${s.name}`,
+              id: s.id || `sonos-${s.name || s.address}`,
               name: s.name || s.friendlyName || 'Sonos Speaker',
               type: 'Sonos' as const,
               url: s.url,
-              friendlyName: s.friendlyName,
+              friendlyName: s.friendlyName || s.name,
+              address: s.address,
             })));
           }
         }
-      } catch (fetchError) {
-        // If backend service is not available, try alternative methods
-        console.log('Sonos discovery service not available, trying alternative methods...');
-        
-        // Alternative: Try to discover via Sonos API or browser extension
-        // Sonos devices typically respond on port 1400
-        // This would require additional setup
+      } catch (fetchError: any) {
+        if (fetchError.name !== 'AbortError') {
+          console.log('Sonos discovery service not available:', fetchError.message);
+        }
       }
       
     } catch (e) {
@@ -450,18 +439,33 @@ const UnifiedSpeakerSelector = ({
       throw new Error("אין שיר נבחר או URL של רמקול");
     }
 
-    // DLNA casting requires sending the media URL to the device
-    // This typically requires a backend service or direct UPnP control
-    // For now, we'll use a placeholder that can be extended
-    
-    // Example: POST to DLNA device's SetAVTransportURI action
-    // const response = await fetch(`${speaker.url}/upnp/control/AVTransport`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'text/xml' },
-    //   body: `<?xml version="1.0"?>...SetAVTransportURI...`
-    // });
-    
-    throw new Error("DLNA casting דורש שירות backend");
+    try {
+      // Cast to DLNA device via backend
+      const castUrl = `http://${window.location.hostname}:3001/api/cast-dlna`;
+      const response = await fetch(castUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deviceUrl: speaker.url,
+          mediaUrl: mediaUrl,
+          title: title || 'Track',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'לא ניתן לשדר ל-DLNA');
+      }
+
+      toast({
+        title: "שידור ל-DLNA",
+        description: `משדר "${title}" ל-${speaker.name}`,
+      });
+    } catch (error: any) {
+      throw new Error(error.message || "לא ניתן לשדר ל-DLNA");
+    }
   };
 
   const castToSonos = async (speaker: Speaker) => {
@@ -469,9 +473,8 @@ const UnifiedSpeakerSelector = ({
       throw new Error("אין שיר נבחר או URL של רמקול");
     }
 
-    // Sonos uses UPnP for control
-    // Similar to DLNA, this requires backend support
-    throw new Error("Sonos casting דורש שירות backend");
+    // Sonos uses UPnP/DLNA, so we can use the same casting method
+    await castToDLNA(speaker);
   };
 
   const castToBluetooth = async (speaker: Speaker) => {
