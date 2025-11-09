@@ -613,101 +613,148 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       return false;
     }
 
-    console.log('🔊 Setting volume to:', volume, '% (', Math.max(0, Math.min(1, volume / 100)), ')');
+    // Check session state
+    const sessionState = session.getSessionState ? session.getSessionState() : null;
+    console.log('🔍 Session state:', sessionState);
+    
+    // Check if receiver is available
+    let receiver = null;
+    if (typeof session.getReceiver === 'function') {
+      try {
+        receiver = session.getReceiver();
+        console.log('🔍 Receiver:', receiver ? {
+          friendlyName: receiver.friendlyName,
+          volume: receiver.volume ? {
+            level: receiver.volume.level,
+            muted: receiver.volume.muted
+          } : null
+        } : 'null');
+      } catch (e) {
+        console.error('❌ Error getting receiver:', e);
+      }
+    }
+
+    if (!receiver) {
+      console.error('❌ No receiver available for volume control');
+      return false;
+    }
+
+    const volLevel = Math.max(0, Math.min(1, volume / 100));
+    console.log('🔊 Setting volume to:', volume, '% (', volLevel, ')');
 
     try {
-      // Method 1: session.setVolume (standard method) - this is the correct way
+      // Method 1: Use receiver.setVolumeLevel (this is the correct way for Cast SDK v3+)
+      if (typeof receiver.setVolumeLevel === 'function') {
+        console.log('📤 Using receiver.setVolumeLevel');
+        return new Promise((resolve) => {
+          try {
+            receiver.setVolumeLevel(
+              volLevel,
+              () => {
+                console.log('✅ Volume set successfully via setVolumeLevel:', volume);
+                updateState({ volume, session });
+                resolve(true);
+              },
+              (error: any) => {
+                console.error('❌ Error setting volume via setVolumeLevel:', error);
+                // Try session.setVolume as fallback
+                try {
+                  const vol = new (window as any).chrome.cast.Volume();
+                  vol.level = volLevel;
+                  vol.muted = stateRef.current.isMuted;
+                  session.setVolume(vol,
+                    () => {
+                      console.log('✅ Volume set via session.setVolume (fallback):', volume);
+                      updateState({ volume, session });
+                      resolve(true);
+                    },
+                    (error2: any) => {
+                      console.error('❌ Volume set failed (fallback):', error2);
+                      resolve(false);
+                    }
+                  );
+                } catch (e) {
+                  console.error('❌ Fallback also failed:', e);
+                  resolve(false);
+                }
+              }
+            );
+          } catch (e) {
+            console.error('❌ Exception calling setVolumeLevel:', e);
+            resolve(false);
+          }
+        });
+      }
+      
+      // Method 2: session.setVolume (standard method)
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
-        vol.level = Math.max(0, Math.min(1, volume / 100));
-        vol.muted = stateRef.current.isMuted; // Preserve mute state
+        vol.level = volLevel;
+        vol.muted = stateRef.current.isMuted;
         
         console.log('📤 Calling session.setVolume with:', { level: vol.level, muted: vol.muted });
         
         // Use setVolume with callbacks - this is the correct API
         return new Promise((resolve) => {
+          // Set timeout to detect if callbacks never fire
+          const timeout = setTimeout(() => {
+            console.error('❌ setVolume callbacks never fired - timeout after 5s');
+            resolve(false);
+          }, 5000);
+          
           try {
             session.setVolume(
               vol,
               () => {
-                // Success callback
+                clearTimeout(timeout);
                 console.log('✅ Volume set successfully:', volume);
                 updateState({ volume, session });
                 resolve(true);
               },
               (error: any) => {
-                // Error callback
+                clearTimeout(timeout);
                 console.error('❌ Error setting volume:', error);
                 console.error('Error details:', {
                   code: error?.code,
                   description: error?.description,
                   error: error
                 });
-                
-                // Try alternative method - retry with new volume object
-                try {
-                  console.log('🔄 Retrying volume set...');
-                  const vol2 = new (window as any).chrome.cast.Volume();
-                  vol2.level = Math.max(0, Math.min(1, volume / 100));
-                  vol2.muted = stateRef.current.isMuted;
-                  
-                  session.setVolume(vol2,
-                    () => {
-                      console.log('✅ Volume set successfully (retry):', volume);
-                      updateState({ volume, session });
-                      resolve(true);
-                    },
-                    (error2: any) => {
-                      console.error('❌ Volume set failed (retry):', error2);
-                      resolve(false);
-                    }
-                  );
-                } catch (e) {
-                  console.error('❌ Retry also failed:', e);
-                  resolve(false);
-                }
+                resolve(false);
               }
             );
           } catch (e) {
+            clearTimeout(timeout);
             console.error('❌ Exception calling setVolume:', e);
             resolve(false);
           }
         });
       }
       
-      // Method 2: Try using receiver directly (fallback)
-      if (typeof session.getReceiver === 'function') {
+      // Method 3: Try setting receiver.volume directly (last resort)
+      if (receiver.volume) {
+        console.log('🔄 Trying direct receiver.volume assignment');
         try {
-          const receiver = session.getReceiver();
-          if (receiver) {
-            console.log('🔄 Trying receiver volume method');
+          receiver.volume.level = volLevel;
+          receiver.volume.muted = stateRef.current.isMuted;
+          // Try to trigger update by calling setVolume
+          if (typeof session.setVolume === 'function') {
             const vol = new (window as any).chrome.cast.Volume();
-            vol.level = Math.max(0, Math.min(1, volume / 100));
-            vol.muted = stateRef.current.isMuted;
-            
-            // Try to set volume using receiver
-            if (receiver.volume) {
-              receiver.volume.level = vol.level;
-              receiver.volume.muted = vol.muted;
-            }
-            
-            // Then use session.setVolume to actually apply it
-            return new Promise((resolve) => {
-              session.setVolume(vol,
-                () => {
-                  console.log('✅ Volume set via receiver method:', volume);
-                  updateState({ volume, session });
-                  resolve(true);
-                },
-                (error: any) => {
-                  console.error('❌ Receiver volume method failed:', error);
-                  resolve(false);
-                }
-              );
-            });
+            vol.level = receiver.volume.level;
+            vol.muted = receiver.volume.muted;
+            session.setVolume(vol,
+              () => {
+                console.log('✅ Volume set via direct assignment:', volume);
+                updateState({ volume, session });
+              },
+              (error: any) => {
+                console.error('❌ Direct assignment failed:', error);
+              }
+            );
           }
+          updateState({ volume, session });
+          return true;
         } catch (e) {
-          console.error('❌ Error using receiver volume:', e);
+          console.error('❌ Direct assignment failed:', e);
         }
       }
       

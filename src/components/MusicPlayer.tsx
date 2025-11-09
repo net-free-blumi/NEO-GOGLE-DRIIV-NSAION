@@ -633,6 +633,9 @@ const MusicPlayer = ({
     };
   }, [repeatMode, onNext]);
 
+  // Debounce volume changes to avoid too many calls
+  const volumeDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  
   useEffect(() => {
     // If Chromecast is active, send volume command to it
     if (isChromecastActive) {
@@ -643,30 +646,30 @@ const MusicPlayer = ({
         return;
       }
       
-      // Mark that we're changing volume to prevent any sync
-      isVolumeChangingRef.current = true;
-      lastUserVolumeRef.current = volume;
-      volumeChangeTimeRef.current = Date.now();
-      
-      // Clear any existing timeout
-      if (volumeChangeTimeoutRef.current) {
-        clearTimeout(volumeChangeTimeoutRef.current);
+      // Clear any existing debounce timeout
+      if (volumeDebounceRef.current) {
+        clearTimeout(volumeDebounceRef.current);
       }
       
-      // Send volume command to Chromecast
-      console.log('MusicPlayer: Sending volume command:', volume);
-      chromecast.setVolume(volume).then((success) => {
-        if (success) {
-          console.log('✅ MusicPlayer: Volume command sent successfully');
-        } else {
-          console.log('❌ MusicPlayer: Volume command failed');
-        }
-      }).catch((e) => {
-        console.error('❌ MusicPlayer: Error setting volume:', e);
-      });
-      
-      // Keep flag true - we don't want to sync volume back from Chromecast
-      // Volume is one-way: user -> Chromecast
+      // Debounce volume changes - wait 100ms before sending
+      volumeDebounceRef.current = setTimeout(() => {
+        // Mark that we're changing volume to prevent any sync
+        isVolumeChangingRef.current = true;
+        lastUserVolumeRef.current = volume;
+        volumeChangeTimeRef.current = Date.now();
+        
+        // Send volume command to Chromecast
+        console.log('MusicPlayer: Sending volume command:', volume);
+        chromecast.setVolume(volume).then((success) => {
+          if (success) {
+            console.log('✅ MusicPlayer: Volume command sent successfully');
+          } else {
+            console.log('❌ MusicPlayer: Volume command failed');
+          }
+        }).catch((e) => {
+          console.error('❌ MusicPlayer: Error setting volume:', e);
+        });
+      }, 100);
       
       return;
     }
