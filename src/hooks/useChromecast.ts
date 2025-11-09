@@ -86,13 +86,19 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       if (castState !== CastState.NO_DEVICES_AVAILABLE) {
         // Check if there's an active session with a device
         const session = ctx.getCurrentSession();
-        if (session) {
-          const receiver = session.getReceiver();
-          devices.push({
-            id: receiver.friendlyName || 'chromecast-connected',
-            name: receiver.friendlyName || 'Chromecast',
-            friendlyName: receiver.friendlyName,
-          });
+        if (session && typeof session.getReceiver === 'function') {
+          try {
+            const receiver = session.getReceiver();
+            if (receiver) {
+              devices.push({
+                id: receiver.friendlyName || 'chromecast-connected',
+                name: receiver.friendlyName || 'Chromecast',
+                friendlyName: receiver.friendlyName,
+              });
+            }
+          } catch (e) {
+            console.log('Error getting receiver from session:', e);
+          }
         } else {
           // Devices are available but not connected
           devices.push({
@@ -136,12 +142,25 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       }
 
       // Get device info
-      const receiver = session.getReceiver();
-      const device: ChromecastDevice = {
-        id: receiver.friendlyName || 'Chromecast',
-        name: receiver.friendlyName || 'Chromecast',
-        friendlyName: receiver.friendlyName,
+      let device: ChromecastDevice = {
+        id: 'Chromecast',
+        name: 'Chromecast',
       };
+      
+      if (typeof session.getReceiver === 'function') {
+        try {
+          const receiver = session.getReceiver();
+          if (receiver) {
+            device = {
+              id: receiver.friendlyName || 'Chromecast',
+              name: receiver.friendlyName || 'Chromecast',
+              friendlyName: receiver.friendlyName,
+            };
+          }
+        } catch (e) {
+          console.log('Error getting receiver from session:', e);
+        }
+      }
 
       // Set up session listeners
       const onSessionStateChanged = (e: any) => {
@@ -421,12 +440,25 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     const checkExistingSession = () => {
       const session = ctx.getCurrentSession();
       if (session && !stateRef.current.isConnected) {
-        const receiver = session.getReceiver();
-        const device: ChromecastDevice = {
-          id: receiver.friendlyName || 'Chromecast',
-          name: receiver.friendlyName || 'Chromecast',
-          friendlyName: receiver.friendlyName,
+        let device: ChromecastDevice = {
+          id: 'Chromecast',
+          name: 'Chromecast',
         };
+        
+        if (typeof session.getReceiver === 'function') {
+          try {
+            const receiver = session.getReceiver();
+            if (receiver) {
+              device = {
+                id: receiver.friendlyName || 'Chromecast',
+                name: receiver.friendlyName || 'Chromecast',
+                friendlyName: receiver.friendlyName,
+              };
+            }
+          } catch (e) {
+            console.log('Error getting receiver from session:', e);
+          }
+        }
 
         const mediaSession = session.getMediaSession();
         if (mediaSession) {
