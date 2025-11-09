@@ -701,60 +701,37 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         }
       }
       
-      // Method 3: session.setVolume (standard method - works even without receiver)
+      // Method 3: session.setVolume (standard method - MUST use callbacks)
+      // NOTE: session.setVolume without callbacks does NOT actually send the command to Chromecast!
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = volLevel;
         vol.muted = stateRef.current.isMuted;
         
-        console.log('📤 Calling session.setVolume with:', { level: vol.level, muted: vol.muted });
+        console.log('📤 Calling session.setVolume with callbacks:', { level: vol.level, muted: vol.muted });
         
-        // Try with callbacks first, but if they don't fire quickly, use fire-and-forget
+        // MUST use callbacks - fire-and-forget doesn't work!
         return new Promise((resolve) => {
-          let callbacksFired = false;
           let resolved = false;
           
-          // Set a short timeout - if callbacks don't fire in 100ms, use fire-and-forget
-          const quickTimeout = setTimeout(() => {
-            if (!callbacksFired && !resolved) {
-              console.log('⚠️ Callbacks not firing quickly, using fire-and-forget method');
-              try {
-                // Use fire-and-forget (no callbacks) - this works better for some Chromecast SDK versions
-                session.setVolume(vol);
-                updateState({ volume, session });
-                resolved = true;
-                resolve(true);
-              } catch (e) {
-                console.error('❌ Fire and forget failed:', e);
-                if (!resolved) {
-                  resolved = true;
-                  resolve(false);
-                }
-              }
+          // Set a longer timeout - wait for callbacks to fire
+          const timeout = setTimeout(() => {
+            if (!resolved) {
+              console.error('❌ setVolume callbacks never fired - timeout after 10s');
+              console.error('🔍 This means the volume command was NOT sent to Chromecast!');
+              resolved = true;
+              resolve(false);
             }
-          }, 100); // Very short timeout - 100ms
-          
-          // Also set a longer timeout as backup
-          const longTimeout = setTimeout(() => {
-            if (!callbacksFired && !resolved) {
-              console.error('❌ setVolume callbacks never fired - timeout after 2s');
-              if (!resolved) {
-                resolved = true;
-                resolve(false);
-              }
-            }
-          }, 2000);
+          }, 10000); // Wait 10 seconds for callbacks
           
           try {
-            // Try with callbacks first
+            // MUST use callbacks - this is the only way to actually send the command
             session.setVolume(
               vol,
               () => {
                 if (!resolved) {
-                  callbacksFired = true;
-                  clearTimeout(quickTimeout);
-                  clearTimeout(longTimeout);
-                  console.log('✅ Volume set successfully (with callbacks):', volume);
+                  clearTimeout(timeout);
+                  console.log('✅ Volume set successfully (callbacks fired):', volume);
                   updateState({ volume, session });
                   resolved = true;
                   resolve(true);
@@ -762,44 +739,24 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               },
               (error: any) => {
                 if (!resolved) {
-                  callbacksFired = true;
-                  clearTimeout(quickTimeout);
-                  clearTimeout(longTimeout);
-                  console.error('❌ Error setting volume (with callbacks):', error);
-                  // Try fire-and-forget as fallback
-                  try {
-                    console.log('🔄 Trying fire-and-forget after callback error');
-                    session.setVolume(vol);
-                    updateState({ volume, session });
-                    resolved = true;
-                    resolve(true);
-                  } catch (e) {
-                    console.error('❌ Fire and forget also failed:', e);
-                    resolved = true;
-                    resolve(false);
-                  }
+                  clearTimeout(timeout);
+                  console.error('❌ Error setting volume (callbacks fired with error):', error);
+                  console.error('Error details:', {
+                    code: error?.code,
+                    description: error?.description,
+                    error: error
+                  });
+                  resolved = true;
+                  resolve(false);
                 }
               }
             );
           } catch (e) {
-            clearTimeout(quickTimeout);
-            clearTimeout(longTimeout);
+            clearTimeout(timeout);
             console.error('❌ Exception calling setVolume:', e);
-            // Try without callbacks as fallback
-            try {
-              console.log('🔄 Trying setVolume without callbacks (exception fallback)');
-              session.setVolume(vol);
-              updateState({ volume, session });
-              if (!resolved) {
-                resolved = true;
-                resolve(true);
-              }
-            } catch (e2) {
-              console.error('❌ Fallback also failed:', e2);
-              if (!resolved) {
-                resolved = true;
-                resolve(false);
-              }
+            if (!resolved) {
+              resolved = true;
+              resolve(false);
             }
           }
         });
