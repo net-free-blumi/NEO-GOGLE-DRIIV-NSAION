@@ -654,8 +654,15 @@ const MusicPlayer = ({
       }
       
       // Send volume command to Chromecast
-      chromecast.setVolume(volume).catch((e) => {
-        console.log('Error setting volume:', e);
+      console.log('MusicPlayer: Sending volume command:', volume);
+      chromecast.setVolume(volume).then((success) => {
+        if (success) {
+          console.log('✅ MusicPlayer: Volume command sent successfully');
+        } else {
+          console.log('❌ MusicPlayer: Volume command failed');
+        }
+      }).catch((e) => {
+        console.error('❌ MusicPlayer: Error setting volume:', e);
       });
       
       // Keep flag true - we don't want to sync volume back from Chromecast
