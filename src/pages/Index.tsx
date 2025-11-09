@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Music, Radio, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import GoogleDriveConnect, { loadSongsFromDrive } from "@/components/GoogleDrive
 import SettingsMenu from "@/components/SettingsMenu";
 import { useToast } from "@/hooks/use-toast";
 import VersionBadge from "@/components/VersionBadge";
+import { useChromecastContext } from "@/contexts/ChromecastContext";
 
 export interface Song {
   id: string;
@@ -56,6 +57,33 @@ const Index = () => {
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('none');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
+  
+  // Get Chromecast context for state sync
+  const chromecast = useChromecastContext();
+  
+  // Check if Chromecast is active
+  const speakers = JSON.parse(sessionStorage.getItem('available_speakers') || '[]');
+  const selectedSpeakerData = speakers.find((s: any) => s.id === selectedSpeaker);
+  const isChromecastActive = selectedSpeakerData?.type === 'Chromecast' && chromecast.state.isConnected;
+  
+  // Sync isPlaying state from Chromecast - CRITICAL for UI sync!
+  // Use ref to track if we're updating from user action to avoid loops
+  const isUserActionRef = useRef(false);
+  
+  useEffect(() => {
+    if (isChromecastActive && chromecast.state.isPlaying !== isPlaying && !isUserActionRef.current) {
+      // Only sync if it's not a user action (to avoid loops)
+      setIsPlaying(chromecast.state.isPlaying);
+    }
+    // Reset flag after sync
+    isUserActionRef.current = false;
+  }, [isChromecastActive, chromecast.state.isPlaying]);
+  
+  // Track user actions
+  const handlePlayPause = () => {
+    isUserActionRef.current = true;
+    setIsPlaying(!isPlaying);
+  };
   
   // Save current song to localStorage
   useEffect(() => {
@@ -129,10 +157,6 @@ const Index = () => {
   const handleSongSelect = (song: Song) => {
     setCurrentSong(song);
     setIsPlaying(true);
-  };
-
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
   };
 
   const handleStop = () => {

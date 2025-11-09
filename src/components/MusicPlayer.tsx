@@ -80,7 +80,7 @@ const MusicPlayer = ({
   useEffect(() => {
     if (isChromecastActive) {
       // Update current time from Chromecast
-      if (chromecast.state.currentTime !== currentTime) {
+      if (Math.abs(chromecast.state.currentTime - currentTime) > 0.5) {
         setCurrentTime(chromecast.state.currentTime);
       }
       
@@ -89,10 +89,11 @@ const MusicPlayer = ({
         setDuration(chromecast.state.duration);
       }
       
+      // DON'T sync isPlaying here - it's handled in Index.tsx to avoid loops
       // DON'T sync volume/mute from Chromecast - user controls it directly
       // Volume and mute are ONE-WAY: user -> Chromecast, NOT Chromecast -> user
     }
-  }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration, chromecast.state.isPlaying]);
+  }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration]);
   
   // Sync volume/mute ONLY on initial connection (one time)
   const hasSyncedVolumeRef = useRef(false);
@@ -733,7 +734,11 @@ const MusicPlayer = ({
     
     // If Chromecast is active, send seek command to it
     if (isChromecastActive) {
-      chromecast.seek(seekTime);
+      chromecast.seek(seekTime).then(() => {
+        // Update current time after seek completes for accurate display
+        setCurrentTime(seekTime);
+      });
+      // Update optimistically for better UX
       setCurrentTime(seekTime);
       return;
     }
@@ -780,12 +785,12 @@ const MusicPlayer = ({
         <div className="container mx-auto px-4 py-4">
           {/* Chromecast Connection Status */}
           {isChromecastActive && chromecast.state.device && (
-            <div className="mb-3 flex items-center justify-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-              <Cast className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium text-green-600 dark:text-green-400">
+            <div className="mb-3 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg">
+              <Cast className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 flex-shrink-0" />
+              <span className="text-[10px] sm:text-xs md:text-sm font-medium text-green-600 dark:text-green-400 line-clamp-2 text-center max-w-[60vw] sm:max-w-none">
                 מחובר ל-{chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}
               </span>
-              <Badge variant="secondary" className="h-5 px-2 text-[11px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30">
+              <Badge variant="secondary" className="h-4 sm:h-5 px-1.5 sm:px-2 text-[9px] sm:text-[10px] md:text-[11px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30 flex-shrink-0">
                 פעיל
               </Badge>
             </div>
@@ -1021,9 +1026,9 @@ const MusicPlayer = ({
                 {song.artist}
               </p>
               {selectedSpeaker && (
-                <p className="text-xs sm:text-sm md:text-base text-primary flex items-center justify-center gap-2 mt-2">
-                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary animate-pulse flex-shrink-0" />
-                  <span className="truncate max-w-[80vw] sm:max-w-none">
+                <p className="text-[10px] sm:text-xs md:text-sm text-primary flex items-center justify-center gap-1.5 sm:gap-2 mt-2 max-w-[90vw] mx-auto">
+                  <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                  <span className="line-clamp-2 text-center">
                     מנגן ב-{isChromecastActive && chromecast.state.device 
                       ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
                       : selectedSpeaker}
