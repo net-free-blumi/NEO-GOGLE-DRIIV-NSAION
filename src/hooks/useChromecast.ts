@@ -667,20 +667,66 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         });
       }
       
-      // Method 2: session.setVolume (standard method - works even without receiver)
+      // Method 2: Try using CastReceiverVolumeRequest (newer API)
+      if ((window as any).chrome?.cast?.receiver?.CastReceiverVolumeRequest) {
+        console.log('📤 Trying CastReceiverVolumeRequest');
+        try {
+          const volumeRequest = new (window as any).chrome.cast.receiver.CastReceiverVolumeRequest();
+          volumeRequest.volume = new (window as any).chrome.cast.Volume();
+          volumeRequest.volume.level = volLevel;
+          volumeRequest.volume.muted = stateRef.current.isMuted;
+          
+          return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              console.error('❌ CastReceiverVolumeRequest timeout');
+              resolve(false);
+            }, 5000);
+            
+            session.setReceiverVolumeLevel(volumeRequest,
+              () => {
+                clearTimeout(timeout);
+                console.log('✅ Volume set via CastReceiverVolumeRequest:', volume);
+                updateState({ volume, session });
+                resolve(true);
+              },
+              (error: any) => {
+                clearTimeout(timeout);
+                console.error('❌ CastReceiverVolumeRequest failed:', error);
+                resolve(false);
+              }
+            );
+          });
+        } catch (e) {
+          console.log('⚠️ CastReceiverVolumeRequest not available:', e);
+        }
+      }
+      
+      // Method 3: session.setVolume (standard method - works even without receiver)
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = volLevel;
         vol.muted = stateRef.current.isMuted;
         
         console.log('📤 Calling session.setVolume with:', { level: vol.level, muted: vol.muted });
+        console.log('🔍 Session type:', session.constructor?.name);
+        console.log('🔍 Session methods:', Object.getOwnPropertyNames(session).filter(name => name.toLowerCase().includes('volume')));
         
         // Use setVolume with callbacks - this is the correct API
         return new Promise((resolve) => {
           // Set timeout to detect if callbacks never fire
           const timeout = setTimeout(() => {
             console.error('❌ setVolume callbacks never fired - timeout after 5s');
-            resolve(false);
+            console.error('🔍 This might mean the session is not ready or the API is different');
+            // Try without callbacks as last resort
+            try {
+              console.log('🔄 Trying setVolume without callbacks (fire and forget)');
+              session.setVolume(vol);
+              updateState({ volume, session });
+              resolve(true);
+            } catch (e) {
+              console.error('❌ Fire and forget also failed:', e);
+              resolve(false);
+            }
           }, 5000);
           
           try {
@@ -706,7 +752,16 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           } catch (e) {
             clearTimeout(timeout);
             console.error('❌ Exception calling setVolume:', e);
-            resolve(false);
+            // Try without callbacks as fallback
+            try {
+              console.log('🔄 Trying setVolume without callbacks (fallback)');
+              session.setVolume(vol);
+              updateState({ volume, session });
+              resolve(true);
+            } catch (e2) {
+              console.error('❌ Fallback also failed:', e2);
+              resolve(false);
+            }
           }
         });
       }
