@@ -293,6 +293,25 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
     const onMediaUpdate = () => {
       try {
+        const ctx = getCastContext();
+        const session = ctx?.getCurrentSession();
+        
+        // Get volume from session (session volume controls the device volume)
+        let volume = stateRef.current.volume;
+        let isMuted = stateRef.current.isMuted;
+        
+        if (session) {
+          try {
+            const receiver = typeof session.getReceiver === 'function' ? session.getReceiver() : null;
+            if (receiver && receiver.volume) {
+              volume = receiver.volume.level !== undefined ? receiver.volume.level * 100 : volume;
+              isMuted = receiver.volume.muted !== undefined ? receiver.volume.muted : isMuted;
+            }
+          } catch (e) {
+            console.log('Error getting receiver volume:', e);
+          }
+        }
+        
         const playerState = mediaSession.playerState;
         // Get current time from media session
         const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
@@ -303,8 +322,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
           currentTime,
           duration: media?.duration || 0,
-          volume: mediaSession.volume?.level !== undefined ? mediaSession.volume.level * 100 : stateRef.current.volume,
-          isMuted: mediaSession.volume?.muted || false,
+          volume,
+          isMuted,
         });
       } catch (e) {
         console.log('Error in media update listener:', e);
@@ -558,6 +577,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     const session = ctx?.getCurrentSession() || stateRef.current.session;
     if (!session) {
       // Try to get session from context
+      console.log('No session available for volume control');
       return false;
     }
 
@@ -565,6 +585,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = Math.max(0, Math.min(1, volume / 100));
+        vol.muted = stateRef.current.isMuted; // Preserve mute state
         await session.setVolume(vol);
         updateState({ volume, session });
         return true;
@@ -583,12 +604,14 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     const session = ctx?.getCurrentSession() || stateRef.current.session;
     if (!session) {
       // Try to get session from context
+      console.log('No session available for mute control');
       return false;
     }
 
     try {
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
+        vol.level = stateRef.current.volume / 100; // Preserve volume level
         vol.muted = muted;
         await session.setVolume(vol);
         updateState({ isMuted: muted, session });
@@ -637,11 +660,28 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           setMediaListeners(mediaSession);
         }
 
+        // Get initial volume from receiver
+        let initialVolume = stateRef.current.volume;
+        let initialMuted = stateRef.current.isMuted;
+        try {
+          if (typeof session.getReceiver === 'function') {
+            const receiver = session.getReceiver();
+            if (receiver && receiver.volume) {
+              initialVolume = receiver.volume.level !== undefined ? receiver.volume.level * 100 : initialVolume;
+              initialMuted = receiver.volume.muted !== undefined ? receiver.volume.muted : initialMuted;
+            }
+          }
+        } catch (e) {
+          console.log('Error getting initial receiver volume:', e);
+        }
+
         updateState({
           isConnected: true,
           device,
           session,
           mediaSession,
+          volume: initialVolume,
+          isMuted: initialMuted,
         });
       }
     };
