@@ -842,7 +842,9 @@ const MusicPlayer = ({
                 {selectedSpeaker && (
                   <p className="text-xs text-primary flex items-center gap-1 mt-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                    מנגן ב-{selectedSpeaker}
+                    מנגן ב-{isChromecastActive && chromecast.state.device 
+                      ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
+                      : selectedSpeaker}
                   </p>
                 )}
               </div>
@@ -1003,7 +1005,9 @@ const MusicPlayer = ({
               {selectedSpeaker && (
                 <p className="text-sm md:text-base text-primary flex items-center justify-center gap-2 mt-2">
                   <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                  מנגן ב-{selectedSpeaker}
+                  מנגן ב-{isChromecastActive && chromecast.state.device 
+                    ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
+                    : selectedSpeaker}
                 </p>
               )}
             </div>

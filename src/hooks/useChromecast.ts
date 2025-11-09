@@ -181,7 +181,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               name: receiver.friendlyName || 'Chromecast',
               friendlyName: receiver.friendlyName,
             };
-            console.log('✅ Device name from getReceiver():', device.name);
           }
         } catch (e) {
           console.log('⚠️ Error getting receiver from session:', e);
@@ -198,7 +197,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               name: castDevice.friendlyName || device.name,
               friendlyName: castDevice.friendlyName,
             };
-            console.log('✅ Device name from getCastDevice():', device.name);
           }
         } catch (e) {
           console.log('⚠️ Error getting castDevice from session:', e);
@@ -213,7 +211,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           name: receiver.friendlyName || device.name,
           friendlyName: receiver.friendlyName,
         };
-        console.log('✅ Device name from session.receiver:', device.name);
       }
       
       // Method 4: Try accessing castDevice directly from session
@@ -224,10 +221,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           name: castDevice.friendlyName || device.name,
           friendlyName: castDevice.friendlyName,
         };
-        console.log('✅ Device name from session.castDevice:', device.name);
       }
       
-      console.log('📱 Final device name:', device.name);
 
       // Set up session listeners
       const onSessionStateChanged = (e: any) => {
@@ -656,10 +651,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       return false;
     }
 
-    // Check session state
-    const sessionState = session.getSessionState ? session.getSessionState() : null;
-    console.log('🔍 Session state:', sessionState);
-    
     // Try to get receiver - CRITICAL for volume control!
     let receiver = null;
     let castDevice = null;
@@ -668,18 +659,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     if (typeof session.getReceiver === 'function') {
       try {
         receiver = session.getReceiver();
-        if (receiver) {
-          console.log('🔍 Receiver found via getReceiver():', {
-            friendlyName: receiver.friendlyName,
-            volume: receiver.volume ? {
-              level: receiver.volume.level,
-              muted: receiver.volume.muted
-            } : null,
-            methods: Object.getOwnPropertyNames(receiver).filter(name => name.toLowerCase().includes('volume'))
-          });
-        }
       } catch (e) {
-        console.log('⚠️ Error getting receiver via getReceiver():', e);
+        // Silent fail
       }
     }
     
@@ -687,51 +668,26 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     if (typeof session.getCastDevice === 'function') {
       try {
         castDevice = session.getCastDevice();
-        if (castDevice) {
-          console.log('🔍 CastDevice found via getCastDevice():', {
-            friendlyName: castDevice.friendlyName,
-            volume: castDevice.volume ? {
-              level: castDevice.volume.level,
-              muted: castDevice.volume.muted
-            } : null
-          });
-          // Use castDevice as receiver if receiver is null
-          if (!receiver && castDevice) {
-            receiver = castDevice;
-          }
+        // Use castDevice as receiver if receiver is null
+        if (!receiver && castDevice) {
+          receiver = castDevice;
         }
       } catch (e) {
-        console.log('⚠️ Error getting castDevice via getCastDevice():', e);
+        // Silent fail
       }
     }
     
     // Method 3: Try accessing receiver directly from session
     if (!receiver && (session as any).receiver) {
       receiver = (session as any).receiver;
-      console.log('🔍 Receiver found via session.receiver:', {
-        friendlyName: receiver.friendlyName,
-        volume: receiver.volume ? {
-          level: receiver.volume.level,
-          muted: receiver.volume.muted
-        } : null
-      });
     }
     
     if (!receiver) {
       console.error('❌ CRITICAL: No receiver found! Volume control will NOT work without receiver!');
-      console.error('🔍 Session object:', session);
-      console.error('🔍 Session methods:', Object.getOwnPropertyNames(session));
-      console.error('🔍 Session prototype:', Object.getPrototypeOf(session));
-    } else {
-      // Log all receiver methods to find volume control methods
-      console.log('🔍 Receiver methods:', Object.getOwnPropertyNames(receiver));
-      console.log('🔍 Receiver prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(receiver)));
-      console.log('🔍 Receiver.volume type:', typeof receiver.volume);
-      console.log('🔍 Receiver.volume methods:', receiver.volume ? Object.getOwnPropertyNames(receiver.volume) : 'null');
+      return false;
     }
 
     const volLevel = Math.max(0, Math.min(1, volume / 100));
-    console.log('🔊 Setting volume to:', volume, '% (', volLevel, ')');
 
     try {
       // Method 1: Try receiver.setVolumeLevel if receiver is available (Cast SDK v3+)
@@ -1122,7 +1078,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 name: castDevice.friendlyName || 'Chromecast',
                 friendlyName: castDevice.friendlyName,
               };
-              console.log('✅ Device name from getCastDevice() in checkExistingSession:', device.name);
             }
           } catch (e) {
             console.log('⚠️ Error getting castDevice from session:', e);
@@ -1139,7 +1094,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 name: receiver.friendlyName || 'Chromecast',
                 friendlyName: receiver.friendlyName,
               };
-              console.log('✅ Device name from getReceiver() in checkExistingSession:', device.name);
             }
           } catch (e) {
             console.log('⚠️ Error getting receiver from session:', e);
@@ -1153,7 +1107,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             name: (session as any).receiver.friendlyName || 'Chromecast',
             friendlyName: (session as any).receiver.friendlyName,
           };
-          console.log('✅ Device name from session.receiver in checkExistingSession:', device.name);
         }
         
         // Method 4: Try session.castDevice
@@ -1163,7 +1116,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             name: (session as any).castDevice.friendlyName || 'Chromecast',
             friendlyName: (session as any).castDevice.friendlyName,
           };
-          console.log('✅ Device name from session.castDevice in checkExistingSession:', device.name);
         }
 
         const mediaSession = session.getMediaSession();
@@ -1249,7 +1201,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               const castDevice = session.getCastDevice();
               if (castDevice && castDevice.friendlyName) {
                 deviceName = castDevice.friendlyName;
-                console.log('✅ Updated device name from getCastDevice():', deviceName);
               }
             } catch (e) {
               console.log('⚠️ Error getting castDevice:', e);
@@ -1262,7 +1213,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               const receiver = session.getReceiver();
               if (receiver && receiver.friendlyName) {
                 deviceName = receiver.friendlyName;
-                console.log('✅ Updated device name from getReceiver():', deviceName);
               }
             } catch (e) {
               console.log('⚠️ Error getting receiver:', e);
@@ -1272,13 +1222,11 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           // Method 3: Try session.receiver
           if (!deviceName && (session as any).receiver && (session as any).receiver.friendlyName) {
             deviceName = (session as any).receiver.friendlyName;
-            console.log('✅ Updated device name from session.receiver:', deviceName);
           }
           
           // Method 4: Try session.castDevice
           if (!deviceName && (session as any).castDevice && (session as any).castDevice.friendlyName) {
             deviceName = (session as any).castDevice.friendlyName;
-            console.log('✅ Updated device name from session.castDevice:', deviceName);
           }
           
           // Update state if we found a device name
@@ -1292,7 +1240,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                   friendlyName: deviceName,
                 }
               });
-              console.log('📱 Device name updated in state:', deviceName);
             }
           }
         } catch (e) {
