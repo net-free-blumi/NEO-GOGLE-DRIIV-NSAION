@@ -782,21 +782,9 @@ const MusicPlayer = ({
       />
 
       <div className="fixed bottom-0 left-0 right-0 bg-[hsl(var(--player-bg))] border-t border-border backdrop-blur-xl z-50">
-        <div className="container mx-auto px-4 py-4">
-          {/* Chromecast Connection Status */}
-          {isChromecastActive && chromecast.state.device && (
-            <div className="mb-3 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg">
-              <Cast className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 flex-shrink-0" />
-              <span className="text-[10px] sm:text-xs md:text-sm font-medium text-green-600 dark:text-green-400 line-clamp-2 text-center max-w-[60vw] sm:max-w-none">
-                מחובר ל-{chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}
-              </span>
-              <Badge variant="secondary" className="h-4 sm:h-5 px-1.5 sm:px-2 text-[9px] sm:text-[10px] md:text-[11px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30 flex-shrink-0">
-                פעיל
-              </Badge>
-            </div>
-          )}
+        <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-4">
           {/* Progress Bar */}
-          <div className="mb-4">
+          <div className="mb-2 sm:mb-4">
             <Slider
               value={[currentTime]}
               max={duration || 100}
@@ -805,7 +793,7 @@ const MusicPlayer = ({
               className="w-full cursor-pointer touch-manipulation"
               disabled={duration === 0 || isLoading}
             />
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+            <div className="flex justify-between text-[10px] sm:text-xs text-muted-foreground mt-1">
               <span>{formatTime(currentTime)}</span>
               <span>{formatTime(duration || song.duration)}</span>
             </div>
@@ -838,21 +826,21 @@ const MusicPlayer = ({
                     className="w-full h-full rounded-lg object-cover"
                   />
                 ) : (
-                  <span className="text-xl sm:text-2xl">🎵</span>
+                  <span className="text-lg sm:text-xl md:text-2xl">🎵</span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">
+                <h3 className="font-semibold text-xs sm:text-sm md:text-base text-foreground truncate">
                   {song.title}
                 </h3>
-                <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                <p className="text-[10px] sm:text-xs md:text-sm text-muted-foreground truncate">
                   {song.artist}
                 </p>
                 {selectedSpeaker && (
-                  <p className="text-[10px] sm:text-xs text-primary flex items-center gap-1 mt-0.5">
-                    <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                  <p className="text-[9px] sm:text-[10px] md:text-xs text-primary flex items-center gap-1 mt-0.5">
+                    <span className="w-1 h-1 rounded-full bg-primary animate-pulse flex-shrink-0" />
                     <span className="truncate">
-                      מנגן ב-{isChromecastActive && chromecast.state.device 
+                      {isChromecastActive && chromecast.state.device 
                         ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
                         : selectedSpeaker}
                     </span>
@@ -872,7 +860,7 @@ const MusicPlayer = ({
                     e.preventDefault();
                     handleRepeatModeClick();
                   }}
-                  className="w-8 h-8 sm:w-10 sm:h-10 hover:bg-secondary/80 transition-colors touch-manipulation"
+                  className="w-9 h-9 sm:w-10 sm:h-10 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
                   title={
                     repeatMode === 'none' ? 'לא חוזר' :
                     repeatMode === 'one' ? 'חוזר על שיר אחד' :
@@ -901,7 +889,11 @@ const MusicPlayer = ({
                 variant="ghost"
                 size="icon"
                 onClick={onPrevious}
-                className="hover:bg-secondary/80 transition-colors"
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onPrevious();
+                }}
+                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
               >
                 <SkipBack className="w-5 h-5" />
               </Button>
@@ -909,7 +901,11 @@ const MusicPlayer = ({
                 variant="default"
                 size="icon"
                 onClick={onPlayPause}
-                className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 transition-all shadow-[var(--shadow-player)]"
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onPlayPause();
+                }}
+                className="w-16 h-16 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-90 transition-all shadow-[var(--shadow-player)] touch-manipulation"
                 disabled={isLoading && !isPlaying}
               >
                 {(isLoading && !isPlaying) ? (
@@ -925,7 +921,11 @@ const MusicPlayer = ({
                   variant="ghost"
                   size="icon"
                   onClick={onStop}
-                  className="hover:bg-secondary/80 transition-colors"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onStop();
+                  }}
+                  className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
                   title="עצירה לגמרי"
                 >
                   <Square className="w-5 h-5" />
@@ -935,7 +935,11 @@ const MusicPlayer = ({
                 variant="ghost"
                 size="icon"
                 onClick={onNext}
-                className="hover:bg-secondary/80 transition-colors"
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onNext();
+                }}
+                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
               >
                 <SkipForward className="w-5 h-5" />
               </Button>
@@ -951,7 +955,7 @@ const MusicPlayer = ({
                   e.preventDefault();
                   setIsMuted(!isMuted);
                 }}
-                className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 touch-manipulation"
+                className="w-9 h-9 sm:w-10 sm:h-10 flex-shrink-0 active:scale-95 transition-all touch-manipulation"
               >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -970,7 +974,7 @@ const MusicPlayer = ({
                     controlExternalSpeaker('volume', v[0]);
                   }
                 }}
-                className="w-20 sm:w-24 cursor-pointer touch-manipulation"
+                className="w-24 sm:w-24 md:w-32 cursor-pointer touch-manipulation"
               />
             </div>
           </div>
