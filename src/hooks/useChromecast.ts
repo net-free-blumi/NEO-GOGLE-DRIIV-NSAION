@@ -809,7 +809,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       onSessionStateChanged
     );
 
-    // Poll for media updates
+    // Poll for media updates - slower interval to prevent violations
     const interval = setInterval(() => {
       try {
         const ctx = getCastContext();
@@ -877,7 +877,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       } catch (error) {
         console.error('Error in media update poll:', error);
       }
-    }, 500);
+    }, 1000); // Slower polling to prevent violations
 
     return () => {
       ctx.removeEventListener(

@@ -72,8 +72,11 @@ const MusicPlayer = ({
   // Track if user is manually changing volume to prevent sync loop
   const isVolumeChangingRef = useRef(false);
   const volumeChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUserVolumeRef = useRef<number | null>(null);
+  const lastUserMuteRef = useRef<boolean | null>(null);
+  const volumeChangeTimeRef = useRef<number>(0);
 
-  // Sync Chromecast state with local state
+  // Sync Chromecast state with local state (except volume/mute which user controls)
   useEffect(() => {
     if (isChromecastActive) {
       // Update current time from Chromecast
@@ -86,17 +89,27 @@ const MusicPlayer = ({
         setDuration(chromecast.state.duration);
       }
       
-      // Update volume from Chromecast - but only if user is not manually changing it
-      if (!isVolumeChangingRef.current && Math.abs(chromecast.state.volume - volume) > 1) {
-        setVolume(chromecast.state.volume);
-      }
-      
-      // Update muted state from Chromecast - but only if user is not manually changing it
-      if (!isVolumeChangingRef.current && chromecast.state.isMuted !== isMuted) {
-        setIsMuted(chromecast.state.isMuted);
+      // Don't sync volume/mute from Chromecast - user controls it directly
+      // Volume and mute are controlled by user, not synced from Chromecast
+    }
+  }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration, chromecast.state.isPlaying]);
+  
+  // Separate effect to sync volume/mute only on initial connection
+  useEffect(() => {
+    if (isChromecastActive && chromecast.state.isConnected) {
+      // Only sync volume/mute on initial connection, not continuously
+      const timeSinceLastChange = Date.now() - volumeChangeTimeRef.current;
+      if (timeSinceLastChange > 3000 && !isVolumeChangingRef.current) {
+        // Initial sync - set volume/mute from Chromecast only once
+        if (Math.abs(chromecast.state.volume - volume) > 1) {
+          setVolume(chromecast.state.volume);
+        }
+        if (chromecast.state.isMuted !== isMuted) {
+          setIsMuted(chromecast.state.isMuted);
+        }
       }
     }
-  }, [isChromecastActive, chromecast.state.currentTime, chromecast.state.duration, chromecast.state.volume, chromecast.state.isMuted, chromecast.state.isPlaying]);
+  }, [isChromecastActive, chromecast.state.isConnected]); // Only run when connection state changes
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -623,6 +636,8 @@ const MusicPlayer = ({
     if (isChromecastActive) {
       // Mark that we're changing volume to prevent sync loop
       isVolumeChangingRef.current = true;
+      lastUserVolumeRef.current = volume;
+      volumeChangeTimeRef.current = Date.now();
       
       // Clear any existing timeout
       if (volumeChangeTimeoutRef.current) {
@@ -635,7 +650,11 @@ const MusicPlayer = ({
       // Reset the flag after a delay to allow sync again
       volumeChangeTimeoutRef.current = setTimeout(() => {
         isVolumeChangingRef.current = false;
-      }, 1000);
+        // Clear user volume ref after sync is allowed again
+        setTimeout(() => {
+          lastUserVolumeRef.current = null;
+        }, 1000);
+      }, 2000);
       
       return;
     }
@@ -657,6 +676,8 @@ const MusicPlayer = ({
     if (isChromecastActive) {
       // Mark that we're changing mute to prevent sync loop
       isVolumeChangingRef.current = true;
+      lastUserMuteRef.current = isMuted;
+      volumeChangeTimeRef.current = Date.now();
       
       // Clear any existing timeout
       if (volumeChangeTimeoutRef.current) {
@@ -669,7 +690,11 @@ const MusicPlayer = ({
       // Reset the flag after a delay to allow sync again
       volumeChangeTimeoutRef.current = setTimeout(() => {
         isVolumeChangingRef.current = false;
-      }, 1000);
+        // Clear user mute ref after sync is allowed again
+        setTimeout(() => {
+          lastUserMuteRef.current = null;
+        }, 1000);
+      }, 2000);
       
       return;
     }
