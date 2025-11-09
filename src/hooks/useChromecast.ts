@@ -165,26 +165,69 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         return false;
       }
 
-      // Get device info
+      // Get device info - try multiple methods to get the device name
       let device: ChromecastDevice = {
         id: 'Chromecast',
         name: 'Chromecast',
       };
       
+      // Method 1: Try session.getReceiver()
       if (typeof session.getReceiver === 'function') {
         try {
           const receiver = session.getReceiver();
-          if (receiver) {
+          if (receiver && receiver.friendlyName) {
             device = {
               id: receiver.friendlyName || 'Chromecast',
               name: receiver.friendlyName || 'Chromecast',
               friendlyName: receiver.friendlyName,
             };
+            console.log('✅ Device name from getReceiver():', device.name);
           }
         } catch (e) {
-          console.log('Error getting receiver from session:', e);
+          console.log('⚠️ Error getting receiver from session:', e);
         }
       }
+      
+      // Method 2: Try session.getCastDevice() (this is what we saw in the logs!)
+      if (typeof session.getCastDevice === 'function') {
+        try {
+          const castDevice = session.getCastDevice();
+          if (castDevice && castDevice.friendlyName) {
+            device = {
+              id: castDevice.friendlyName || device.id,
+              name: castDevice.friendlyName || device.name,
+              friendlyName: castDevice.friendlyName,
+            };
+            console.log('✅ Device name from getCastDevice():', device.name);
+          }
+        } catch (e) {
+          console.log('⚠️ Error getting castDevice from session:', e);
+        }
+      }
+      
+      // Method 3: Try accessing receiver directly from session
+      if ((session as any).receiver && (session as any).receiver.friendlyName) {
+        const receiver = (session as any).receiver;
+        device = {
+          id: receiver.friendlyName || device.id,
+          name: receiver.friendlyName || device.name,
+          friendlyName: receiver.friendlyName,
+        };
+        console.log('✅ Device name from session.receiver:', device.name);
+      }
+      
+      // Method 4: Try accessing castDevice directly from session
+      if ((session as any).castDevice && (session as any).castDevice.friendlyName) {
+        const castDevice = (session as any).castDevice;
+        device = {
+          id: castDevice.friendlyName || device.id,
+          name: castDevice.friendlyName || device.name,
+          friendlyName: castDevice.friendlyName,
+        };
+        console.log('✅ Device name from session.castDevice:', device.name);
+      }
+      
+      console.log('📱 Final device name:', device.name);
 
       // Set up session listeners
       const onSessionStateChanged = (e: any) => {
@@ -679,6 +722,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       console.error('🔍 Session object:', session);
       console.error('🔍 Session methods:', Object.getOwnPropertyNames(session));
       console.error('🔍 Session prototype:', Object.getPrototypeOf(session));
+    } else {
+      // Log all receiver methods to find volume control methods
+      console.log('🔍 Receiver methods:', Object.getOwnPropertyNames(receiver));
+      console.log('🔍 Receiver prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(receiver)));
+      console.log('🔍 Receiver.volume type:', typeof receiver.volume);
+      console.log('🔍 Receiver.volume methods:', receiver.volume ? Object.getOwnPropertyNames(receiver.volume) : 'null');
     }
 
     const volLevel = Math.max(0, Math.min(1, volume / 100));
@@ -720,53 +769,81 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           });
         }
         
-        // Try receiver.volume.level assignment + session.setVolume
-        if (receiver.volume) {
-          console.log('📤 Trying receiver.volume.level assignment + session.setVolume');
-          // Set receiver volume directly
-          receiver.volume.level = volLevel;
-          receiver.volume.muted = stateRef.current.isMuted;
-          console.log('✅ Receiver volume set directly:', {
-            level: receiver.volume.level,
-            muted: receiver.volume.muted
+        // Try using receiver.volume.setLevel if available
+        if (receiver.volume && typeof receiver.volume.setLevel === 'function') {
+          console.log('📤 Using receiver.volume.setLevel');
+          return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              console.error('❌ receiver.volume.setLevel timeout after 5s');
+              resolve(false);
+            }, 5000);
+            
+            try {
+              receiver.volume.setLevel(
+                volLevel,
+                () => {
+                  clearTimeout(timeout);
+                  console.log('✅ Volume set successfully via receiver.volume.setLevel:', volume);
+                  updateState({ volume, session });
+                  resolve(true);
+                },
+                (error: any) => {
+                  clearTimeout(timeout);
+                  console.error('❌ Error setting volume via receiver.volume.setLevel:', error);
+                  resolve(false);
+                }
+              );
+            } catch (e) {
+              clearTimeout(timeout);
+              console.error('❌ Exception calling receiver.volume.setLevel:', e);
+              resolve(false);
+            }
           });
+        }
+        
+        // Try receiver.volume.level assignment - this doesn't work, but let's try it anyway
+        // NOTE: receiver.volume.level is read-only and won't actually change the Chromecast volume!
+        if (receiver.volume) {
+          console.log('⚠️ WARNING: receiver.volume.level assignment does NOT work - it is read-only!');
+          console.log('📤 Trying session.setVolume directly (receiver.volume is read-only)');
           
-          // Now try to sync with session.setVolume
+          // Create volume object and try session.setVolume
           const vol = new (window as any).chrome.cast.Volume();
-          vol.level = receiver.volume.level;
-          vol.muted = receiver.volume.muted;
+          vol.level = volLevel;
+          vol.muted = stateRef.current.isMuted;
           
           return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-              console.error('❌ session.setVolume timeout after 5s');
-              // Even if timeout, the receiver.volume was set, so return true
-              updateState({ volume, session });
-              resolve(true);
-            }, 5000);
+              console.error('❌ session.setVolume timeout after 10s - callbacks never fired!');
+              console.error('🔍 This means the volume command was NOT sent to Chromecast!');
+              console.error('🔍 The Chromecast SDK may not support volume control in this session state.');
+              resolve(false);
+            }, 10000);
             
             try {
               session.setVolume(
                 vol,
                 () => {
                   clearTimeout(timeout);
-                  console.log('✅ Volume set via receiver.volume + session.setVolume:', volume);
+                  console.log('✅ Volume set successfully via session.setVolume:', volume);
                   updateState({ volume, session });
                   resolve(true);
                 },
                 (error: any) => {
                   clearTimeout(timeout);
-                  console.error('❌ Error in session.setVolume (but receiver.volume was set):', error);
-                  // Even if error, receiver.volume was set, so return true
-                  updateState({ volume, session });
-                  resolve(true);
+                  console.error('❌ Error setting volume via session.setVolume:', error);
+                  console.error('Error details:', {
+                    code: error?.code,
+                    description: error?.description,
+                    error: error
+                  });
+                  resolve(false);
                 }
               );
             } catch (e) {
               clearTimeout(timeout);
-              console.error('❌ Exception in session.setVolume (but receiver.volume was set):', e);
-              // Even if exception, receiver.volume was set, so return true
-              updateState({ volume, session });
-              resolve(true);
+              console.error('❌ Exception calling session.setVolume:', e);
+              resolve(false);
             }
           });
         }
@@ -1035,19 +1112,58 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           name: 'Chromecast',
         };
         
-        if (typeof session.getReceiver === 'function') {
+        // Method 1: Try getCastDevice() (this is what we saw in the logs!)
+        if (typeof session.getCastDevice === 'function') {
+          try {
+            const castDevice = session.getCastDevice();
+            if (castDevice && castDevice.friendlyName) {
+              device = {
+                id: castDevice.friendlyName || 'Chromecast',
+                name: castDevice.friendlyName || 'Chromecast',
+                friendlyName: castDevice.friendlyName,
+              };
+              console.log('✅ Device name from getCastDevice() in checkExistingSession:', device.name);
+            }
+          } catch (e) {
+            console.log('⚠️ Error getting castDevice from session:', e);
+          }
+        }
+        
+        // Method 2: Try getReceiver()
+        if (device.name === 'Chromecast' && typeof session.getReceiver === 'function') {
           try {
             const receiver = session.getReceiver();
-            if (receiver) {
+            if (receiver && receiver.friendlyName) {
               device = {
                 id: receiver.friendlyName || 'Chromecast',
                 name: receiver.friendlyName || 'Chromecast',
                 friendlyName: receiver.friendlyName,
               };
+              console.log('✅ Device name from getReceiver() in checkExistingSession:', device.name);
             }
           } catch (e) {
-            console.log('Error getting receiver from session:', e);
+            console.log('⚠️ Error getting receiver from session:', e);
           }
+        }
+        
+        // Method 3: Try session.receiver
+        if (device.name === 'Chromecast' && (session as any).receiver && (session as any).receiver.friendlyName) {
+          device = {
+            id: (session as any).receiver.friendlyName || 'Chromecast',
+            name: (session as any).receiver.friendlyName || 'Chromecast',
+            friendlyName: (session as any).receiver.friendlyName,
+          };
+          console.log('✅ Device name from session.receiver in checkExistingSession:', device.name);
+        }
+        
+        // Method 4: Try session.castDevice
+        if (device.name === 'Chromecast' && (session as any).castDevice && (session as any).castDevice.friendlyName) {
+          device = {
+            id: (session as any).castDevice.friendlyName || 'Chromecast',
+            name: (session as any).castDevice.friendlyName || 'Chromecast',
+            friendlyName: (session as any).castDevice.friendlyName,
+          };
+          console.log('✅ Device name from session.castDevice in checkExistingSession:', device.name);
         }
 
         const mediaSession = session.getMediaSession();
@@ -1123,21 +1239,60 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           return;
         }
 
-        // Update device name from receiver if available
+        // Update device name from receiver/castDevice if available
         try {
-          if (typeof session.getReceiver === 'function') {
-            const receiver = session.getReceiver();
-            if (receiver && receiver.friendlyName) {
-              const currentDeviceName = stateRef.current.device?.name || stateRef.current.device?.friendlyName || '';
-              if (receiver.friendlyName !== currentDeviceName) {
-                updateState({
-                  device: {
-                    id: receiver.friendlyName,
-                    name: receiver.friendlyName,
-                    friendlyName: receiver.friendlyName,
-                  }
-                });
+          let deviceName = null;
+          
+          // Method 1: Try getCastDevice() (this is what we saw in the logs!)
+          if (typeof session.getCastDevice === 'function') {
+            try {
+              const castDevice = session.getCastDevice();
+              if (castDevice && castDevice.friendlyName) {
+                deviceName = castDevice.friendlyName;
+                console.log('✅ Updated device name from getCastDevice():', deviceName);
               }
+            } catch (e) {
+              console.log('⚠️ Error getting castDevice:', e);
+            }
+          }
+          
+          // Method 2: Try getReceiver()
+          if (!deviceName && typeof session.getReceiver === 'function') {
+            try {
+              const receiver = session.getReceiver();
+              if (receiver && receiver.friendlyName) {
+                deviceName = receiver.friendlyName;
+                console.log('✅ Updated device name from getReceiver():', deviceName);
+              }
+            } catch (e) {
+              console.log('⚠️ Error getting receiver:', e);
+            }
+          }
+          
+          // Method 3: Try session.receiver
+          if (!deviceName && (session as any).receiver && (session as any).receiver.friendlyName) {
+            deviceName = (session as any).receiver.friendlyName;
+            console.log('✅ Updated device name from session.receiver:', deviceName);
+          }
+          
+          // Method 4: Try session.castDevice
+          if (!deviceName && (session as any).castDevice && (session as any).castDevice.friendlyName) {
+            deviceName = (session as any).castDevice.friendlyName;
+            console.log('✅ Updated device name from session.castDevice:', deviceName);
+          }
+          
+          // Update state if we found a device name
+          if (deviceName) {
+            const currentDeviceName = stateRef.current.device?.name || stateRef.current.device?.friendlyName || '';
+            if (deviceName !== currentDeviceName) {
+              updateState({
+                device: {
+                  id: deviceName,
+                  name: deviceName,
+                  friendlyName: deviceName,
+                }
+              });
+              console.log('📱 Device name updated in state:', deviceName);
             }
           }
         } catch (e) {
