@@ -756,9 +756,9 @@ const UnifiedSpeakerSelector = ({
             <>
               {selectedSpeakerData ? getSpeakerIcon(selectedSpeakerData.type) : <Radio className="w-4 h-4" />}
               {selectedSpeakerData ? selectedSpeakerData.name : "בחר רמקול"}
-              {isChromecastConnected && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
-                  מחובר
+              {isChromecastConnected && chromecast.state.device && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30">
+                  מחובר: {chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}
                 </Badge>
               )}
             </>
@@ -818,7 +818,7 @@ const UnifiedSpeakerSelector = ({
                     {speaker.type === 'Chromecast' && (
                       <>
                         {chromecast.state.isConnected && chromecast.state.device && (
-                          <span className="text-green-500 mr-1"> • מחובר</span>
+                          <span className="text-green-500 mr-1"> • מחובר: {chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}</span>
                         )}
                         {!chromecast.state.isConnected && speaker.id === 'chromecast-connect' && (
                           <span className="text-yellow-500 mr-1"> • לחץ לחיבור</span>

@@ -695,10 +695,12 @@ const MusicPlayer = ({
         <div className="container mx-auto px-4 py-4">
           {/* Chromecast Connection Status */}
           {isChromecastActive && chromecast.state.device && (
-            <div className="mb-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <Cast className="w-3 h-3 text-green-500" />
-              <span>מחובר ל-{chromecast.state.device.name}</span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+            <div className="mb-3 flex items-center justify-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+              <Cast className="w-4 h-4 text-green-500" />
+              <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                מחובר ל-{chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}
+              </span>
+              <Badge variant="secondary" className="h-5 px-2 text-[11px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30">
                 פעיל
               </Badge>
             </div>

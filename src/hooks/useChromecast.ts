@@ -574,25 +574,77 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
   const setVolume = useCallback(async (volume: number) => {
     const ctx = getCastContext();
-    const session = ctx?.getCurrentSession() || stateRef.current.session;
+    if (!ctx) {
+      console.log('No CastContext available for volume control');
+      return false;
+    }
+    
+    const session = ctx.getCurrentSession() || stateRef.current.session;
     if (!session) {
-      // Try to get session from context
       console.log('No session available for volume control');
       return false;
     }
 
     try {
+      // Try multiple methods to set volume
+      // Method 1: session.setVolume (standard method)
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = Math.max(0, Math.min(1, volume / 100));
         vol.muted = stateRef.current.isMuted; // Preserve mute state
-        await session.setVolume(vol);
-        updateState({ volume, session });
+        
+        // Use setVolume with callback
+        const volLevel = Math.max(0, Math.min(1, volume / 100));
+        const volMuted = stateRef.current.isMuted;
+        
+        session.setVolume(vol, 
+          () => {
+            console.log('Volume set successfully:', volume);
+            updateState({ volume, session });
+          },
+          (error: any) => {
+            console.error('Error setting volume:', error);
+            // Try alternative method - set receiver volume directly
+            try {
+              if (typeof session.getReceiver === 'function') {
+                const receiver = session.getReceiver();
+                if (receiver && receiver.volume) {
+                  receiver.volume.level = volLevel;
+                  receiver.volume.muted = volMuted;
+                  updateState({ volume, session });
+                }
+              }
+            } catch (e) {
+              console.error('Alternative volume method also failed:', e);
+            }
+          }
+        );
         return true;
-      } else {
-        console.error('setVolume() is not a function on session');
-        return false;
       }
+      
+      // Method 2: Try using receiver directly
+      if (typeof session.getReceiver === 'function') {
+        try {
+          const receiver = session.getReceiver();
+          if (receiver && receiver.volume) {
+            // Try to set volume directly on receiver
+            receiver.volume.level = Math.max(0, Math.min(1, volume / 100));
+            receiver.volume.muted = stateRef.current.isMuted;
+            // Then use session.setVolume to actually apply it
+            const vol = new (window as any).chrome.cast.Volume();
+            vol.level = receiver.volume.level;
+            vol.muted = receiver.volume.muted;
+            session.setVolume(vol);
+            updateState({ volume, session });
+            return true;
+          }
+        } catch (e) {
+          console.log('Error using receiver volume:', e);
+        }
+      }
+      
+      console.error('No volume control method available');
+      return false;
     } catch (error) {
       console.error('Error setting volume:', error);
       return false;
@@ -601,25 +653,73 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
   const setMuted = useCallback(async (muted: boolean) => {
     const ctx = getCastContext();
-    const session = ctx?.getCurrentSession() || stateRef.current.session;
+    if (!ctx) {
+      console.log('No CastContext available for mute control');
+      return false;
+    }
+    
+    const session = ctx.getCurrentSession() || stateRef.current.session;
     if (!session) {
-      // Try to get session from context
       console.log('No session available for mute control');
       return false;
     }
 
     try {
+      // Try multiple methods to set mute
+      // Method 1: session.setVolume (standard method)
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();
         vol.level = stateRef.current.volume / 100; // Preserve volume level
         vol.muted = muted;
-        await session.setVolume(vol);
-        updateState({ isMuted: muted, session });
+        
+        // Use setVolume with callback
+        session.setVolume(vol,
+          () => {
+            console.log('Mute set successfully:', muted);
+            updateState({ isMuted: muted, session });
+          },
+          (error: any) => {
+            console.error('Error setting mute:', error);
+            // Try alternative method - set receiver mute directly
+            try {
+              if (typeof session.getReceiver === 'function') {
+                const receiver = session.getReceiver();
+                if (receiver && receiver.volume) {
+                  receiver.volume.muted = muted;
+                  updateState({ isMuted: muted, session });
+                }
+              }
+            } catch (e) {
+              console.error('Alternative mute method also failed:', e);
+            }
+          }
+        );
         return true;
-      } else {
-        console.error('setVolume() is not a function on session');
-        return false;
       }
+      
+      // Method 2: Try using receiver directly
+      if (typeof session.getReceiver === 'function') {
+        try {
+          const receiver = session.getReceiver();
+          if (receiver && receiver.volume) {
+            // Try to set mute directly on receiver
+            receiver.volume.muted = muted;
+            receiver.volume.level = stateRef.current.volume / 100;
+            // Then use session.setVolume to actually apply it
+            const vol = new (window as any).chrome.cast.Volume();
+            vol.level = receiver.volume.level;
+            vol.muted = receiver.volume.muted;
+            session.setVolume(vol);
+            updateState({ isMuted: muted, session });
+            return true;
+          }
+        } catch (e) {
+          console.log('Error using receiver volume:', e);
+        }
+      }
+      
+      console.error('No mute control method available');
+      return false;
     } catch (error) {
       console.error('Error setting muted:', error);
       return false;
