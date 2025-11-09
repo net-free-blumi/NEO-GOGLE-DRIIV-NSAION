@@ -126,6 +126,30 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     try {
       updateState({ isConnecting: true });
 
+      // Check if already connected
+      const existingSession = ctx.getCurrentSession();
+      if (existingSession) {
+        // Already connected, just update state
+        const receiver = typeof existingSession.getReceiver === 'function' ? existingSession.getReceiver() : null;
+        const device: ChromecastDevice = receiver ? {
+          id: receiver.friendlyName || 'Chromecast',
+          name: receiver.friendlyName || 'Chromecast',
+          friendlyName: receiver.friendlyName,
+        } : {
+          id: 'Chromecast',
+          name: 'Chromecast',
+        };
+        
+        updateState({
+          isConnected: true,
+          isConnecting: false,
+          device,
+          session: existingSession,
+          mediaSession: existingSession.getMediaSession(),
+        });
+        return true;
+      }
+
       ctx.setOptions({
         receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
         // Enable discovery of all Cast-enabled devices including Smart TVs
@@ -220,12 +244,16 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       console.error('Error connecting to Chromecast:', error);
       updateState({ isConnecting: false });
       
-      if (error.code === 'cancel') {
-        // User cancelled - don't show error
+      if (error.code === 'cancel' || error.code === 'session_error') {
+        // User cancelled or session error - don't show error, just return false
+        // session_error usually means user cancelled or device unavailable
         return false;
       }
       
-      options.onError?.(new Error(error.message || 'לא ניתן להתחבר ל-Chromecast'));
+      // Only show error for other types of errors
+      if (error.code !== 'session_error') {
+        options.onError?.(new Error(error.message || 'לא ניתן להתחבר ל-Chromecast'));
+      }
       return false;
     }
   }, [getCastContext, updateState, options]);
