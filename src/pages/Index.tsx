@@ -14,6 +14,7 @@ import { useChromecastContext } from "@/contexts/ChromecastContext";
 export interface Song {
   id: string;
   title: string;
+  name?: string; // Alias for title (used in some places)
   artist: string;
   album?: string;
   duration: number;
