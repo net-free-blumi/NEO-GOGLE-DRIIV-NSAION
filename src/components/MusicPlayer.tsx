@@ -744,15 +744,8 @@ const MusicPlayer = ({
         volumeChangeTimeRef.current = Date.now();
         
         // Send volume command to Chromecast
-        console.log('MusicPlayer: Sending volume command:', volume);
-        chromecast.setVolume(volume).then((success) => {
-          if (success) {
-            console.log('✅ MusicPlayer: Volume command sent successfully');
-          } else {
-            console.log('❌ MusicPlayer: Volume command failed');
-          }
-        }).catch((e) => {
-          console.error('❌ MusicPlayer: Error setting volume:', e);
+        chromecast.setVolume(volume).catch(() => {
+          // Silent fail
         });
       }, 100);
       
@@ -818,12 +811,12 @@ const MusicPlayer = ({
     
     // If Chromecast is active, send seek command to it
     if (isChromecastActive) {
-      chromecast.seek(seekTime).then(() => {
-        // Update current time after seek completes for accurate display
-        setCurrentTime(seekTime);
-      });
       // Update optimistically for better UX
       setCurrentTime(seekTime);
+      // Send seek command - don't wait for it to complete
+      chromecast.seek(seekTime).catch(() => {
+        // Silent fail - error handling is in useChromecast
+      });
       return;
     }
     

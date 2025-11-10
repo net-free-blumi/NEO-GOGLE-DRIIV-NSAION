@@ -452,11 +452,13 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(finalUrl, contentType);
       mediaInfo.metadata = new (window as any).chrome.cast.media.MusicTrackMediaMetadata();
       mediaInfo.metadata.title = title;
-      mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.BUFFERED;
+      // Use LIVE stream type for better buffering and smoother playback
+      mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.LIVE;
 
       const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
       request.autoplay = true;
-      request.currentTime = 0;
+      // Don't reset currentTime to 0 - use current position if available
+      request.currentTime = stateRef.current.currentTime || 0;
 
       const mediaSession = await session.loadMedia(request);
       
@@ -641,13 +643,11 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   const setVolume = useCallback(async (volume: number): Promise<boolean> => {
     const ctx = getCastContext();
     if (!ctx) {
-      console.log('❌ No CastContext available for volume control');
       return false;
     }
     
     const session = ctx.getCurrentSession() || stateRef.current.session;
     if (!session) {
-      console.log('❌ No session available for volume control');
       return false;
     }
 
@@ -683,7 +683,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     }
     
     if (!receiver) {
-      console.error('❌ CRITICAL: No receiver found! Volume control will NOT work without receiver!');
       return false;
     }
 
@@ -695,10 +694,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       if (receiver) {
         // Try receiver.setVolumeLevel (if available)
         if (typeof receiver.setVolumeLevel === 'function') {
-          console.log('📤 Using receiver.setVolumeLevel (PREFERRED METHOD)');
           return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-              console.error('❌ receiver.setVolumeLevel timeout after 5s');
               resolve(false);
             }, 5000);
             
@@ -707,19 +704,16 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 volLevel,
                 () => {
                   clearTimeout(timeout);
-                  console.log('✅ Volume set successfully via receiver.setVolumeLevel:', volume);
                   updateState({ volume, session });
                   resolve(true);
                 },
-                (error: any) => {
+                () => {
                   clearTimeout(timeout);
-                  console.error('❌ Error setting volume via receiver.setVolumeLevel:', error);
                   resolve(false);
                 }
               );
             } catch (e) {
               clearTimeout(timeout);
-              console.error('❌ Exception calling receiver.setVolumeLevel:', e);
               resolve(false);
             }
           });
@@ -727,10 +721,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         
         // Try using receiver.volume.setLevel if available
         if (receiver.volume && typeof receiver.volume.setLevel === 'function') {
-          console.log('📤 Using receiver.volume.setLevel');
           return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-              console.error('❌ receiver.volume.setLevel timeout after 5s');
               resolve(false);
             }, 5000);
             
@@ -739,19 +731,16 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 volLevel,
                 () => {
                   clearTimeout(timeout);
-                  console.log('✅ Volume set successfully via receiver.volume.setLevel:', volume);
                   updateState({ volume, session });
                   resolve(true);
                 },
-                (error: any) => {
+                () => {
                   clearTimeout(timeout);
-                  console.error('❌ Error setting volume via receiver.volume.setLevel:', error);
                   resolve(false);
                 }
               );
             } catch (e) {
               clearTimeout(timeout);
-              console.error('❌ Exception calling receiver.volume.setLevel:', e);
               resolve(false);
             }
           });
@@ -760,9 +749,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         // Try receiver.volume.level assignment - this doesn't work, but let's try it anyway
         // NOTE: receiver.volume.level is read-only and won't actually change the Chromecast volume!
         if (receiver.volume) {
-          console.log('⚠️ WARNING: receiver.volume.level assignment does NOT work - it is read-only!');
-          console.log('📤 Trying session.setVolume directly (receiver.volume is read-only)');
-          
           // Create volume object and try session.setVolume
           const vol = new (window as any).chrome.cast.Volume();
           vol.level = volLevel;
@@ -770,9 +756,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           
           return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-              console.error('❌ session.setVolume timeout after 10s - callbacks never fired!');
-              console.error('🔍 This means the volume command was NOT sent to Chromecast!');
-              console.error('🔍 The Chromecast SDK may not support volume control in this session state.');
               resolve(false);
             }, 10000);
             
@@ -781,24 +764,16 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 vol,
                 () => {
                   clearTimeout(timeout);
-                  console.log('✅ Volume set successfully via session.setVolume:', volume);
                   updateState({ volume, session });
                   resolve(true);
                 },
-                (error: any) => {
+                () => {
                   clearTimeout(timeout);
-                  console.error('❌ Error setting volume via session.setVolume:', error);
-                  console.error('Error details:', {
-                    code: error?.code,
-                    description: error?.description,
-                    error: error
-                  });
                   resolve(false);
                 }
               );
             } catch (e) {
               clearTimeout(timeout);
-              console.error('❌ Exception calling session.setVolume:', e);
               resolve(false);
             }
           });
@@ -807,7 +782,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       
       // Method 2: Try using CastReceiverVolumeRequest (newer API)
       if ((window as any).chrome?.cast?.receiver?.CastReceiverVolumeRequest) {
-        console.log('📤 Trying CastReceiverVolumeRequest');
         try {
           const volumeRequest = new (window as any).chrome.cast.receiver.CastReceiverVolumeRequest();
           volumeRequest.volume = new (window as any).chrome.cast.Volume();
@@ -816,26 +790,23 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           
           return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-              console.error('❌ CastReceiverVolumeRequest timeout');
               resolve(false);
             }, 5000);
             
             session.setReceiverVolumeLevel(volumeRequest,
               () => {
                 clearTimeout(timeout);
-                console.log('✅ Volume set via CastReceiverVolumeRequest:', volume);
                 updateState({ volume, session });
                 resolve(true);
               },
-              (error: any) => {
+              () => {
                 clearTimeout(timeout);
-                console.error('❌ CastReceiverVolumeRequest failed:', error);
                 resolve(false);
               }
             );
           });
         } catch (e) {
-          console.log('⚠️ CastReceiverVolumeRequest not available:', e);
+          // Silent fail
         }
       }
       
@@ -851,7 +822,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           updateState({ volume, session });
           return true;
         } catch (e) {
-          console.log('⚠️ setReceiverVolumeLevel not available, trying other methods');
+          // Silent fail
         }
       }
       
@@ -869,13 +840,11 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           updateState({ volume, session });
           return true;
         } catch (e) {
-          console.error('❌ Exception calling setVolume (fire-and-forget):', e);
           // If fire-and-forget fails, try with callbacks as fallback
           return new Promise((resolve) => {
             let resolved = false;
             const timeout = setTimeout(() => {
               if (!resolved) {
-                console.error('❌ setVolume callbacks never fired - timeout after 5s');
                 resolved = true;
                 resolve(false);
               }
@@ -887,16 +856,14 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
                 () => {
                   if (!resolved) {
                     clearTimeout(timeout);
-                    console.log('✅ Volume set successfully (callbacks fired):', volume);
                     updateState({ volume, session });
                     resolved = true;
                     resolve(true);
                   }
                 },
-                (error: any) => {
+                () => {
                   if (!resolved) {
                     clearTimeout(timeout);
-                    console.error('❌ Error setting volume (callbacks fired with error):', error);
                     resolved = true;
                     resolve(false);
                   }
@@ -904,7 +871,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               );
             } catch (e2) {
               clearTimeout(timeout);
-              console.error('❌ Exception calling setVolume with callbacks:', e2);
               if (!resolved) {
                 resolved = true;
                 resolve(false);
@@ -914,9 +880,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         }
       }
       
-      // Method 3: Try setting receiver.volume directly if receiver is available (last resort)
+      // Method 5: Try setting receiver.volume directly if receiver is available (last resort)
       if (receiver && receiver.volume) {
-        console.log('🔄 Trying direct receiver.volume assignment');
         try {
           receiver.volume.level = volLevel;
           receiver.volume.muted = stateRef.current.isMuted;
@@ -925,27 +890,17 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             const vol = new (window as any).chrome.cast.Volume();
             vol.level = receiver.volume.level;
             vol.muted = receiver.volume.muted;
-            session.setVolume(vol,
-              () => {
-                console.log('✅ Volume set via direct assignment:', volume);
-                updateState({ volume, session });
-              },
-              (error: any) => {
-                console.error('❌ Direct assignment failed:', error);
-              }
-            );
+            session.setVolume(vol, () => {}, () => {});
           }
           updateState({ volume, session });
           return true;
         } catch (e) {
-          console.error('❌ Direct assignment failed:', e);
+          // Silent fail
         }
       }
       
-      console.error('❌ No volume control method available');
       return false;
     } catch (error) {
-      console.error('❌ Exception in setVolume:', error);
       return false;
     }
   }, [updateState, getCastContext]);
