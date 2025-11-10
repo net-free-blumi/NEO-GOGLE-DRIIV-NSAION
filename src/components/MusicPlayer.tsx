@@ -76,14 +76,32 @@ const MusicPlayer = ({
   
   useEffect(() => {
     if (isChromecastActive && song.url && !isLoadingRef.current) {
+      // Stop local audio immediately when Chromecast becomes active
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      
       // Only load if it's a different song (not when seeking - that's handled in handleSeek)
       if (lastLoadedSongRef.current !== song.id) {
         lastLoadedSongRef.current = song.id;
         lastLoadedTimeRef.current = 0;
         isLoadingRef.current = true;
+        
+        // Ensure local audio is stopped before loading to Chromecast
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+        
         chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', 0)
           .then(() => {
             isLoadingRef.current = false;
+            // Ensure local audio is still stopped after loading
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current.currentTime = 0;
+            }
           })
           .catch(() => {
             isLoadingRef.current = false;
@@ -625,7 +643,8 @@ const MusicPlayer = ({
           isDownloadingRef.current = false;
           
           // Double check: make sure we're still supposed to play and not aborted
-          if (!abortController.signal.aborted && isPlaying && audio.paused) {
+          // Also check that Chromecast is not active - don't play local audio if Chromecast is active
+          if (!abortController.signal.aborted && isPlaying && audio.paused && !isChromecastActive && !isExternalSpeakerActive) {
             // Buffer is ready, now play
             audio.play().then(() => {
               setIsLoading(false);
@@ -657,15 +676,29 @@ const MusicPlayer = ({
     };
   }, [song.id, song.url, isPlaying, toast, isChromecastActive]);
 
-  // Stop local audio when external speaker is active
+  // Stop local audio immediately when external speaker is active
   useEffect(() => {
     if ((isExternalSpeakerActive || isChromecastActive) && audioRef.current) {
       const audio = audioRef.current;
       if (!audio.paused) {
         audio.pause();
+        audio.currentTime = 0; // Reset position when switching to external speaker
       }
     }
   }, [isExternalSpeakerActive, isChromecastActive, selectedSpeaker]);
+  
+  // Stop local audio immediately when speaker changes to Chromecast
+  useEffect(() => {
+    const selectedSpeakerData = speakers.find((s: any) => s.id === selectedSpeaker);
+    const isSwitchingToChromecast = selectedSpeakerData?.type === 'Chromecast';
+    
+    if (isSwitchingToChromecast && audioRef.current) {
+      // Stop local audio immediately when switching to Chromecast
+      const audio = audioRef.current;
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  }, [selectedSpeaker, speakers]);
 
   // Handle play/pause with better buffering
   useEffect(() => {
@@ -751,18 +784,19 @@ const MusicPlayer = ({
               
               // Wait for buffer to download before playing
               waitForBuffer(audio, position).then(() => {
-                // Double check: make sure we're still supposed to play
-                if (isPlaying && audio.paused) {
-                  // Buffer is ready, now play
-                  audio.play().then(() => {
-                    setIsLoading(false);
-                  }).catch(err => {
-                    console.error('Play error:', err);
-                    setIsLoading(false);
-                  });
-                } else {
+              // Double check: make sure we're still supposed to play
+              // Also check that Chromecast is not active - don't play local audio if Chromecast is active
+              if (isPlaying && audio.paused && !isChromecastActive && !isExternalSpeakerActive) {
+                // Buffer is ready, now play
+                audio.play().then(() => {
                   setIsLoading(false);
-                }
+                }).catch(err => {
+                  console.error('Play error:', err);
+                  setIsLoading(false);
+                });
+              } else {
+                setIsLoading(false);
+              }
               }).catch((err) => {
                 console.error('Buffer wait error:', err);
                 setIsLoading(false);
@@ -816,11 +850,20 @@ const MusicPlayer = ({
       
       // Wait for enough data before playing to prevent stuttering
       const tryPlay = async () => {
+        // Don't play local audio if Chromecast or external speaker is active
+        if (isChromecastActive || isExternalSpeakerActive) {
+          setIsLoading(false);
+          return;
+        }
+        
         // Wait for at least some data to be buffered
         // For better streaming, we want HAVE_FUTURE_DATA (readyState >= 3)
         if (audio.readyState >= 3) { // HAVE_FUTURE_DATA - best for streaming
           try {
-            await audio.play();
+            // Double check before playing
+            if (!isChromecastActive && !isExternalSpeakerActive) {
+              await audio.play();
+            }
             setIsLoading(false);
           } catch (err) {
             console.error('Play error:', err);
@@ -828,7 +871,10 @@ const MusicPlayer = ({
           }
         } else if (audio.readyState >= 2) { // HAVE_CURRENT_DATA - acceptable
           try {
-            await audio.play();
+            // Double check before playing
+            if (!isChromecastActive && !isExternalSpeakerActive) {
+              await audio.play();
+            }
             setIsLoading(false);
           } catch (err) {
             console.error('Play error:', err);
@@ -839,25 +885,40 @@ const MusicPlayer = ({
           const maxRetries = 50; // 5 seconds max wait
           let retries = 0;
           const checkAndPlay = () => {
+            // Don't play if Chromecast or external speaker is active
+            if (isChromecastActive || isExternalSpeakerActive) {
+              setIsLoading(false);
+              return;
+            }
+            
             if (audio.readyState >= 3) { // Prefer HAVE_FUTURE_DATA
-              audio.play().catch(err => {
-                console.error('Play error:', err);
-                setIsLoading(false);
-              });
+              if (!isChromecastActive && !isExternalSpeakerActive) {
+                audio.play().catch(err => {
+                  console.error('Play error:', err);
+                  setIsLoading(false);
+                });
+              }
             } else if (audio.readyState >= 2) { // Accept HAVE_CURRENT_DATA
-              audio.play().catch(err => {
-        console.error('Play error:', err);
-        setIsLoading(false);
-      });
+              if (!isChromecastActive && !isExternalSpeakerActive) {
+                audio.play().catch(err => {
+                  console.error('Play error:', err);
+                  setIsLoading(false);
+                });
+              }
             } else if (retries < maxRetries) {
               retries++;
               setTimeout(checkAndPlay, 100);
             } else {
               // Force play even if not ready (browser will buffer)
-              audio.play().catch(err => {
-                console.error('Play error after retries:', err);
+              // But only if Chromecast/external speaker is not active
+              if (!isChromecastActive && !isExternalSpeakerActive) {
+                audio.play().catch(err => {
+                  console.error('Play error after retries:', err);
+                  setIsLoading(false);
+                });
+              } else {
                 setIsLoading(false);
-              });
+              }
             }
           };
           checkAndPlay();
@@ -1015,10 +1076,17 @@ const MusicPlayer = ({
     if (!audio) return;
 
     const handleEnded = () => {
+      // Don't handle ended event if Chromecast or external speaker is active
+      if (isChromecastActive || isExternalSpeakerActive) {
+        return;
+      }
+      
       if (repeatMode === 'one') {
         // Repeat current song
         audio.currentTime = 0;
-        audio.play();
+        if (!isChromecastActive && !isExternalSpeakerActive) {
+          audio.play();
+        }
       } else if (repeatMode === 'all') {
         // Continue to next song
         onNext();

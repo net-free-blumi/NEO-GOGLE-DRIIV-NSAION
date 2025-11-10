@@ -572,20 +572,35 @@ const UnifiedSpeakerSelector = ({
     if (!speaker) return;
 
     try {
-      // Stop local audio before connecting to external speaker
+      // Stop local audio IMMEDIATELY before connecting to external speaker
+      // This must happen before any async operations
       const audio = audioRef.current || document.querySelector('audio') as HTMLAudioElement;
       if (audio && speaker.type !== 'Browser') {
         audio.pause();
         audio.currentTime = 0;
+        // Force stop - ensure audio is completely stopped
+        audio.load(); // Reset audio element
       }
 
       switch (speaker.type) {
         case 'Chromecast':
+          // Ensure local audio is stopped before connecting
+          if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.load();
+          }
+          
           // Connect to Chromecast - this will show the native picker
           // But we'll handle it gracefully
           if (chromecast.state.isConnected) {
             // Already connected, just load media if needed
             if (mediaUrl) {
+              // Ensure audio is still stopped before loading
+              if (audio) {
+                audio.pause();
+                audio.currentTime = 0;
+              }
               await chromecast.loadMedia(mediaUrl, title, contentType);
             }
           } else {
@@ -593,6 +608,11 @@ const UnifiedSpeakerSelector = ({
             try {
               const connected = await chromecast.connect();
               if (connected && mediaUrl) {
+                // Ensure audio is still stopped before loading
+                if (audio) {
+                  audio.pause();
+                  audio.currentTime = 0;
+                }
                 // Load media after connection
                 await chromecast.loadMedia(mediaUrl, title, contentType);
               }
