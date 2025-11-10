@@ -148,11 +148,26 @@ const MusicPlayer = ({
     };
   }, []);
 
+  // Track loading state to prevent multiple loads
+  const loadingSongRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
     if (!audioRef.current || !song.url) return;
     
     const audio = audioRef.current;
+    
+    // Cancel previous loading if different song
+    if (loadingSongRef.current !== song.id && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // If already loading this song, don't load again
+    if (loadingSongRef.current === song.id) {
+      return;
+    }
     
     // If Chromecast is active, still load audio for buffering (but don't play it)
     if (isChromecastActive) {
@@ -163,35 +178,51 @@ const MusicPlayer = ({
       // Continue to load the audio for buffering purposes (don't return early)
     }
     
+    // Create new AbortController for this load
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    loadingSongRef.current = song.id;
+    
     // Helper function to refresh token if needed
     const refreshTokenIfNeeded = async (): Promise<string | null> => {
+      // Check if aborted
+      if (abortController.signal.aborted) return null;
+      
       let accessToken = sessionStorage.getItem('gd_access_token');
       const expiresAt = sessionStorage.getItem('gd_token_expires_at');
       
       // Check if token is expired - if so, try to refresh it
       if (accessToken && expiresAt && parseInt(expiresAt) <= Date.now()) {
         // Token expired, try to refresh using Google Token Client
-        console.log('Token expired, attempting to refresh...');
         const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
         if (GOOGLE_CLIENT_ID && (window as any).google?.accounts?.oauth2) {
           // Use a promise to wait for token refresh
           try {
             await new Promise<void>((resolve, reject) => {
+              // Check if aborted
+              if (abortController.signal.aborted) {
+                reject(new Error('Aborted'));
+                return;
+              }
+              
               const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
                 scope: 'https://www.googleapis.com/auth/drive.readonly',
                 prompt: '', // Use cached consent
                 callback: (resp: any) => {
+                  if (abortController.signal.aborted) {
+                    reject(new Error('Aborted'));
+                    return;
+                  }
+                  
                   if (resp.access_token) {
                     const expiresIn = resp.expires_in || 3600;
                     const newExpiresAt = Date.now() + (expiresIn - 60) * 1000;
                     sessionStorage.setItem('gd_access_token', resp.access_token);
                     sessionStorage.setItem('gd_token_expires_at', newExpiresAt.toString());
                     accessToken = resp.access_token;
-                    console.log('Token refreshed successfully');
                     resolve();
                   } else if (resp.error) {
-                    console.error('Token refresh error:', resp.error);
                     // Show toast notification for disconnection
                     if (resp.error === 'popup_blocked' || resp.error === 'popup_closed_by_user') {
                       toast({
@@ -221,8 +252,8 @@ const MusicPlayer = ({
               });
               tokenClient.requestAccessToken({ prompt: '' });
             });
-          } catch (error) {
-            console.error('Token refresh failed:', error);
+          } catch (error: any) {
+            if (error.message === 'Aborted') return null;
             toast({
               title: 'התנתקות מ-Google Drive',
               description: 'החיבור ל-Google Drive פג. נא להתחבר מחדש.',
@@ -232,7 +263,6 @@ const MusicPlayer = ({
             accessToken = null;
           }
         } else {
-          console.warn('Cannot refresh token: Google OAuth not available');
           toast({
             title: 'התנתקות מ-Google Drive',
             description: 'לא ניתן לרענן את החיבור. נא להתחבר מחדש.',
@@ -245,25 +275,21 @@ const MusicPlayer = ({
       
       return accessToken;
     };
+    
     // Only set loading if it's a new song (not resuming) AND we're playing
-    // Don't set loading when pausing/stopping
     const savedPosition = sessionStorage.getItem(`song_position_${song.id}`);
-    const isNewSong = !savedPosition && audio.readyState === 0; // New song = no saved position AND audio not loaded yet
+    const isNewSong = !savedPosition && audio.readyState === 0;
     
     if (isNewSong && isPlaying) {
-      // Only show loading when starting a new song that's actually playing
-    setIsLoading(true);
-    setIsBuffering(false);
-    setDuration(0);
-      // Don't reset currentTime here - let it be restored from savedPosition if exists
+      setIsLoading(true);
+      setIsBuffering(false);
+      setDuration(0);
     } else if (!isPlaying) {
-      // When pausing/stopping, don't show loading
       setIsLoading(false);
     }
     
     // Build URL with token if needed
     // Only set src if it's a new song or if audio hasn't loaded yet
-    // Don't reset src when pausing/resuming the same song (this causes position to reset)
     const isNewSongOrNotLoaded = !audio.src || audio.readyState === 0 || !audio.src.includes(song.url.split('?')[0]);
     
     if (isNewSongOrNotLoaded) {
@@ -271,20 +297,21 @@ const MusicPlayer = ({
       
       // Refresh token if needed and build URL
       refreshTokenIfNeeded().then((accessToken) => {
+        // Check if aborted
+        if (abortController.signal.aborted) return;
+        
         if (!accessToken) {
-          // Token refresh failed - stop loading
           setIsLoading(false);
           setIsBuffering(false);
+          loadingSongRef.current = null;
           return;
         }
         
         let finalUrl = song.url;
         if (isNetlify && accessToken) {
-          // Check if URL already has query parameters
           const separator = song.url.includes('?') ? '&' : '?';
           finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
         } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
-          // For non-Netlify URLs, also add token if not present
           const separator = song.url.includes('?') ? '&' : '?';
           finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
         }
@@ -293,29 +320,31 @@ const MusicPlayer = ({
         const currentSrcBase = audio.src ? audio.src.split('?')[0] : '';
         const newSrcBase = finalUrl.split('?')[0];
         if (currentSrcBase !== newSrcBase) {
+          // Check if aborted before setting src
+          if (abortController.signal.aborted) return;
+          
           // Optimize audio element for streaming
-          audio.preload = 'none'; // Don't preload - stream on demand
+          audio.preload = 'none';
           audio.src = finalUrl;
         }
-      }).catch((error) => {
-        console.error('Error refreshing token:', error);
+      }).catch((error: any) => {
+        if (error.message === 'Aborted') return;
         setIsLoading(false);
         setIsBuffering(false);
+        loadingSongRef.current = null;
       });
     }
     
-    // Restore saved position if exists (for resume after pause)
-    // Don't reset position if audio is already loaded and paused (normal pause, not new song)
+    // Restore saved position if exists
     if (savedPosition) {
       const position = parseFloat(savedPosition);
       if (!isNaN(position) && position > 0) {
-        // Wait for metadata to load before setting position
         if (audio.duration > 0 && position < audio.duration) {
           audio.currentTime = position;
           setCurrentTime(position);
         } else {
-          // If metadata not loaded yet, set position after it loads
           const handleMetadataLoad = () => {
+            if (abortController.signal.aborted) return;
             if (audio.duration > 0 && position < audio.duration) {
               audio.currentTime = position;
               setCurrentTime(position);
@@ -326,28 +355,24 @@ const MusicPlayer = ({
         }
       }
     } else if (isNewSong && isPlaying && audio.readyState === 0 && !savedPosition) {
-      // Only reset to 0 if it's a new song AND we're playing AND audio hasn't loaded yet AND no saved position
-      // Don't reset if audio is already loaded (normal pause/resume) or if there's a saved position
-    audio.currentTime = 0;
+      audio.currentTime = 0;
       setCurrentTime(0);
     }
-    // If audio is already loaded and paused, keep current position (don't reset)
     
     // Set up streaming optimization
     audio.setAttribute('preload', 'none');
     
     // Add error handler for audio loading errors
     const handleAudioError = (e: any) => {
-      console.error('Audio loading error:', e);
+      if (abortController.signal.aborted) return;
+      
       setIsLoading(false);
       setIsBuffering(false);
       
-      // Check if it's an authentication error (401/403) or network error
       const target = e.target as HTMLAudioElement;
       if (target.error) {
         const errorCode = target.error.code;
         if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || errorCode === MediaError.MEDIA_ERR_NETWORK) {
-          // Check if Google Drive token exists
           const accessToken = sessionStorage.getItem('gd_access_token');
           if (!accessToken) {
             toast({
@@ -357,7 +382,6 @@ const MusicPlayer = ({
               duration: 5000,
             });
           } else {
-            // Check if it's a 504 timeout error
             const src = target.src || '';
             if (src.includes('netlify') || src.includes('504')) {
               toast({
@@ -377,20 +401,26 @@ const MusicPlayer = ({
           }
         }
       }
+      loadingSongRef.current = null;
     };
     
     audio.addEventListener('error', handleAudioError);
     
     // Only load when user wants to play AND it's a new song (not resuming)
-    // Don't call load() when resuming - it resets the position to 0!
     if (isPlaying && isNewSongOrNotLoaded) {
-      audio.load();
+      if (!abortController.signal.aborted) {
+        audio.load();
+      }
     }
     
     return () => {
       audio.removeEventListener('error', handleAudioError);
+      // Cleanup on unmount or song change
+      if (loadingSongRef.current === song.id) {
+        loadingSongRef.current = null;
+      }
     };
-  }, [song.id, song.url, isPlaying, toast]);
+  }, [song.id, song.url, isPlaying, toast, isChromecastActive]);
 
   // Stop local audio when external speaker is active
   useEffect(() => {
