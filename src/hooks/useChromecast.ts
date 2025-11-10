@@ -295,7 +295,20 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         const existingSession = ctx?.getCurrentSession();
         if (existingSession) {
           // We have an existing session, use it
-          checkExistingSession();
+          // Check existing session and update state
+          const device = existingSession.getReceiver?.() || existingSession.getCastDevice?.();
+          if (device) {
+            updateState({
+              isConnected: true,
+              device: {
+                id: device.id || '',
+                name: device.friendlyName || device.name || 'Chromecast',
+                friendlyName: device.friendlyName || device.name || 'Chromecast',
+              },
+              session: existingSession,
+              mediaSession: existingSession.getMediaSession?.(),
+            });
+          }
           return true;
         }
         // No existing session - show error

@@ -1,5 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 import { Radio, Check, Loader2, RefreshCw, Cast, Airplay, Bluetooth, Wifi, WifiOff } from "lucide-react";
+
+// Extend Navigator interface for Bluetooth
+interface BluetoothDevice {
+  id: string;
+  name?: string;
+  gatt?: {
+    connect(): Promise<BluetoothRemoteGATTServer>;
+  };
+}
+
+interface BluetoothRemoteGATTServer {
+  device: BluetoothDevice;
+  connected: boolean;
+  connect(): Promise<BluetoothRemoteGATTServer>;
+  disconnect(): void;
+}
+
+interface BluetoothRequestDeviceFilter {
+  services?: string[];
+  namePrefix?: string;
+}
+
+interface NavigatorWithBluetooth extends Navigator {
+  bluetooth?: {
+    requestDevice(options: { filters: BluetoothRequestDeviceFilter[]; optionalServices?: string[] }): Promise<BluetoothDevice>;
+    getAvailability(): Promise<boolean>;
+  };
+}
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -220,7 +248,7 @@ const UnifiedSpeakerSelector = ({
                 // Google Cast SDK will show ALL available devices in the picker
                 discoveredSpeakers.push({
                   id: 'chromecast-connect',
-                  name: 'Chromecast / Smart TV / Google Cast',
+                  name: 'Chromecast',
                   type: 'Chromecast'
                 });
               }
@@ -230,7 +258,7 @@ const UnifiedSpeakerSelector = ({
             // Still add the option - it will work when clicked
             discoveredSpeakers.push({
               id: 'chromecast-connect',
-              name: 'Chromecast / Smart TV / Google Cast',
+              name: 'Chromecast',
               type: 'Chromecast'
             });
           }
@@ -239,7 +267,7 @@ const UnifiedSpeakerSelector = ({
           // Even if there's an error, try to add the option
           discoveredSpeakers.push({
             id: 'chromecast-connect',
-            name: 'Chromecast / Smart TV / Google Cast',
+            name: 'Chromecast',
             type: 'Chromecast'
           });
         }
@@ -284,7 +312,7 @@ const UnifiedSpeakerSelector = ({
       // Note: Web Bluetooth API requires user interaction to select devices
       // We can't automatically discover all Bluetooth speakers
       // Instead, we'll add a generic "Bluetooth" option that prompts the user when selected
-      if (navigator.bluetooth) {
+      if ((navigator as NavigatorWithBluetooth).bluetooth) {
         discoveredSpeakers.push({
           id: 'bluetooth-generic',
           name: 'Bluetooth',
@@ -493,7 +521,7 @@ const UnifiedSpeakerSelector = ({
     const bluetoothSpeakers: Speaker[] = [];
     
     try {
-      if (navigator.bluetooth) {
+      if ((navigator as NavigatorWithBluetooth).bluetooth) {
         // Bluetooth Web API has limitations - we can't discover devices automatically
         // We can only request a device when user explicitly chooses one
         // So we'll add a placeholder option that prompts the user to select a device
@@ -695,13 +723,14 @@ const UnifiedSpeakerSelector = ({
       // Web Bluetooth API requires user interaction to select devices
       // We can't automatically discover all Bluetooth speakers
       // When user selects "Bluetooth", we'll prompt them to choose a device
-      if (navigator.bluetooth && speaker.id === 'bluetooth-generic') {
+      const nav = navigator as NavigatorWithBluetooth;
+      if (nav.bluetooth && speaker.id === 'bluetooth-generic') {
         try {
           // Valid Bluetooth UUIDs for A2DP (Advanced Audio Distribution Profile):
           // Audio Sink: 0000110b-0000-1000-8000-00805f9b34fb
           // Audio Source: 0000110a-0000-1000-8000-00805f9b34fb
           
-          const device = await navigator.bluetooth.requestDevice({
+          const device = await nav.bluetooth.requestDevice({
             filters: [
               { services: ['0000110b-0000-1000-8000-00805f9b34fb'] }, // A2DP Audio Sink
               { namePrefix: 'Speaker' },
@@ -790,7 +819,7 @@ const UnifiedSpeakerSelector = ({
               {selectedSpeakerData ? selectedSpeakerData.name : "בחר רמקול"}
               {isChromecastConnected && chromecast.state.device && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30">
-                  מחובר: {chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}
+                  <span>מחובר: {chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast'}</span>
                 </Badge>
               )}
             </>
