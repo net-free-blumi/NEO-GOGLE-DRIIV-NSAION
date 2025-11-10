@@ -617,7 +617,10 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           try {
             const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
             seekRequest.currentTime = time;
-            seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
+            // Try to set resumeState if available, otherwise skip it
+            if ((window as any).chrome?.cast?.media?.ResumeState) {
+              seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
+            }
             await ms.seek(seekRequest);
             // Don't call setMediaListeners again - it's already set
             updateState({ mediaSession: ms, currentTime: time, isPlaying: true });
@@ -641,7 +644,10 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       if (typeof mediaSession.seek === 'function') {
         const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
         seekRequest.currentTime = time;
-        seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
+        // Try to set resumeState if available, otherwise skip it
+        if ((window as any).chrome?.cast?.media?.ResumeState) {
+          seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
+        }
         await mediaSession.seek(seekRequest);
         updateState({ currentTime: time, isPlaying: true });
         // Wait longer before allowing polling to update again to prevent loops
