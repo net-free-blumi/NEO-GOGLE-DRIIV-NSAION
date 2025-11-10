@@ -91,13 +91,11 @@ const MusicPlayer = ({
   // Sync Chromecast state with local state (except volume/mute which user controls)
   useEffect(() => {
     if (isChromecastActive) {
-      // Update current time from Chromecast
-      if (Math.abs(chromecast.state.currentTime - currentTime) > 0.5) {
-        setCurrentTime(chromecast.state.currentTime);
-      }
+      // Update current time from Chromecast - sync more frequently
+      setCurrentTime(chromecast.state.currentTime);
       
       // Update duration from Chromecast
-      if (chromecast.state.duration > 0 && chromecast.state.duration !== duration) {
+      if (chromecast.state.duration > 0) {
         setDuration(chromecast.state.duration);
       }
       
