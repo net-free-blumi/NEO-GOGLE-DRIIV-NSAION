@@ -87,13 +87,8 @@ const UnifiedSpeakerSelector = ({
     const checkCastState = () => {
       const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
       if (ctx) {
-        const castState = ctx.getCastState();
-        const CastState = (window as any).cast?.framework?.CastState;
-        console.log('Chromecast state:', castState, CastState);
-        
         const onCastStateChanged = () => {
           // Refresh speakers when Cast state changes
-          console.log('Chromecast state changed, refreshing speakers...');
           discoverSpeakers();
         };
         
@@ -333,25 +328,25 @@ const UnifiedSpeakerSelector = ({
       if (isLocalDev) {
         // Try to discover via local backend service
         const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
-        
-        try {
-          const response = await fetch(discoveryUrl, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
+      
+      try {
+        const response = await fetch(discoveryUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(6000),
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.speakers && Array.isArray(data.speakers)) {
-              dlnaSpeakers.push(...data.speakers.map((s: any) => ({
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.speakers && Array.isArray(data.speakers)) {
+            dlnaSpeakers.push(...data.speakers.map((s: any) => ({
                 id: s.id || `dlna-${s.name || s.address}`,
                 name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
-                type: 'DLNA' as const,
-                url: s.url,
+              type: 'DLNA' as const,
+              url: s.url,
                 friendlyName: s.friendlyName || s.name,
                 address: s.address,
-              })));
+            })));
             }
           }
         } catch (fetchError: any) {
@@ -453,39 +448,37 @@ const UnifiedSpeakerSelector = ({
       if (isLocalDev) {
         // Sonos uses UPnP for discovery
         const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=sonos`;
-        
-        try {
-          const response = await fetch(discoveryUrl, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
+      
+      try {
+        const response = await fetch(discoveryUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(6000),
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.speakers && Array.isArray(data.speakers)) {
-              sonosSpeakers.push(...data.speakers.map((s: any) => ({
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.speakers && Array.isArray(data.speakers)) {
+            sonosSpeakers.push(...data.speakers.map((s: any) => ({
                 id: s.id || `sonos-${s.name || s.address}`,
-                name: s.name || s.friendlyName || 'Sonos Speaker',
-                type: 'Sonos' as const,
-                url: s.url,
+              name: s.name || s.friendlyName || 'Sonos Speaker',
+              type: 'Sonos' as const,
+              url: s.url,
                 friendlyName: s.friendlyName || s.name,
                 address: s.address,
-              })));
+            })));
             }
           }
         } catch (fetchError: any) {
-          if (fetchError.name !== 'AbortError') {
-            console.log('Sonos discovery service not available - make sure to run: npm run dev:all');
-          }
+          // Silent fail - Sonos discovery service not available
         }
       } else {
         // In production, Sonos discovery doesn't work
-        console.log('Sonos discovery not available in production - use Chromecast SDK instead');
+        // Sonos discovery not available in production - use Chromecast SDK instead
       }
       
     } catch (e) {
-      console.log('Sonos discovery error:', e);
+      // Silent fail - Sonos discovery error
     }
     
     return sonosSpeakers;

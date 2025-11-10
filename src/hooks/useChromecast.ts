@@ -460,7 +460,29 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       // Don't reset currentTime to 0 - use current position if available
       request.currentTime = stateRef.current.currentTime || 0;
 
-      const mediaSession = await session.loadMedia(request);
+      // Add timeout and retry logic for better connection handling
+      let mediaSession = null;
+      let retries = 0;
+      const maxRetries = 2;
+      
+      while (retries <= maxRetries && !mediaSession) {
+        try {
+          mediaSession = await Promise.race([
+            session.loadMedia(request),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('timeout')), 10000)
+            )
+          ]) as any;
+        } catch (error: any) {
+          if (error.message === 'timeout' && retries < maxRetries) {
+            // Wait a bit before retry
+            await new Promise(resolve => setTimeout(resolve, 500));
+            retries++;
+            continue;
+          }
+          throw error;
+        }
+      }
       
       if (mediaSession) {
         setMediaListeners(mediaSession);
@@ -908,17 +930,13 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   const setMuted = useCallback(async (muted: boolean): Promise<boolean> => {
     const ctx = getCastContext();
     if (!ctx) {
-      console.log('❌ No CastContext available for mute control');
       return false;
     }
     
     const session = ctx.getCurrentSession() || stateRef.current.session;
     if (!session) {
-      console.log('❌ No session available for mute control');
       return false;
     }
-
-    console.log('🔇 Setting muted to:', muted);
 
     try {
       // Method 1: session.setVolume (standard method) - this is the correct way
@@ -927,53 +945,37 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         vol.level = stateRef.current.volume / 100; // Preserve volume level
         vol.muted = muted;
         
-        console.log('📤 Calling session.setVolume for mute with:', { level: vol.level, muted: vol.muted });
-        
         // Use setVolume with callbacks - this is the correct API
         return new Promise((resolve) => {
           try {
             session.setVolume(vol,
               () => {
                 // Success callback
-                console.log('✅ Mute set successfully:', muted);
                 updateState({ isMuted: muted, session });
                 resolve(true);
               },
               (error: any) => {
-                // Error callback
-                console.error('❌ Error setting mute:', error);
-                console.error('Error details:', {
-                  code: error?.code,
-                  description: error?.description,
-                  error: error
-                });
-                
-                // Try alternative method - retry with new volume object
+                // Error callback - try retry with new volume object
                 try {
-                  console.log('🔄 Retrying mute set...');
                   const vol2 = new (window as any).chrome.cast.Volume();
                   vol2.level = stateRef.current.volume / 100;
                   vol2.muted = muted;
                   
                   session.setVolume(vol2,
                     () => {
-                      console.log('✅ Mute set successfully (retry):', muted);
                       updateState({ isMuted: muted, session });
                       resolve(true);
                     },
-                    (error2: any) => {
-                      console.error('❌ Mute set failed (retry):', error2);
+                    () => {
                       resolve(false);
                     }
                   );
                 } catch (e) {
-                  console.error('❌ Retry also failed:', e);
                   resolve(false);
                 }
               }
             );
           } catch (e) {
-            console.error('❌ Exception calling setVolume for mute:', e);
             resolve(false);
           }
         });
@@ -984,7 +986,6 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         try {
           const receiver = session.getReceiver();
           if (receiver) {
-            console.log('🔄 Trying receiver mute method');
             const vol = new (window as any).chrome.cast.Volume();
             vol.level = stateRef.current.volume / 100;
             vol.muted = muted;
@@ -999,26 +1000,22 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             return new Promise((resolve) => {
               session.setVolume(vol,
                 () => {
-                  console.log('✅ Mute set via receiver method:', muted);
                   updateState({ isMuted: muted, session });
                   resolve(true);
                 },
-                (error: any) => {
-                  console.error('❌ Receiver mute method failed:', error);
+                () => {
                   resolve(false);
                 }
               );
             });
           }
         } catch (e) {
-          console.error('❌ Error using receiver mute:', e);
+          // Silent fail
         }
       }
       
-      console.error('❌ No mute control method available');
       return false;
     } catch (error) {
-      console.error('❌ Exception in setMuted:', error);
       return false;
     }
   }, [updateState, getCastContext]);

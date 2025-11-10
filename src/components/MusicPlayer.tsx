@@ -67,11 +67,19 @@ const MusicPlayer = ({
   const isChromecastActive = selectedSpeakerData?.type === 'Chromecast' && chromecast.state.isConnected;
 
   // Load song to Chromecast if connected
+  // Use ref to prevent multiple loads of the same song
+  const lastLoadedSongRef = useRef<string | null>(null);
   useEffect(() => {
     if (isChromecastActive && song.url) {
-      chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg');
+      // Only load if it's a different song
+      if (lastLoadedSongRef.current !== song.id) {
+        lastLoadedSongRef.current = song.id;
+        chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg').catch(() => {
+          // Silent fail - error handling is in useChromecast
+        });
+      }
     }
-  }, [song.id, song.url, isChromecastActive]);
+  }, [song.id, song.url, isChromecastActive, chromecast]);
 
   // Track if user is manually changing volume to prevent sync loop
   const isVolumeChangingRef = useRef(false);
