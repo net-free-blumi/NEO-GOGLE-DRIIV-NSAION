@@ -141,14 +141,15 @@ const MusicPlayer = ({
   useEffect(() => {
     if (!audioRef.current || !song.url) return;
     
-    // Skip local audio setup if Chromecast is active
+    const audio = audioRef.current;
+    
+    // If Chromecast is active, still load audio for buffering (but don't play it)
     if (isChromecastActive) {
-      // Stop local audio when Chromecast is active
-      const audio = audioRef.current;
+      // Pause local audio when Chromecast is active, but keep it loaded for buffering
       if (!audio.paused) {
         audio.pause();
       }
-      return;
+      // Continue to load the audio for buffering purposes (don't return early)
     }
 
     const audio = audioRef.current;
