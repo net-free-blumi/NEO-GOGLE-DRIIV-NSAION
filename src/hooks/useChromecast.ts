@@ -357,10 +357,34 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   }, [getCastContext, updateState]);
 
   // Set up media session listeners
+  // Track listeners to prevent duplicates
+  const mediaListenersRef = useRef<{ update?: () => void; status?: () => void }>({});
+
   const setMediaListeners = useCallback((mediaSession: any) => {
     if (!mediaSession) return;
 
+    // Remove existing listeners first to prevent duplicates
+    if (mediaListenersRef.current.update && typeof mediaSession.removeUpdateListener === 'function') {
+      try {
+        mediaSession.removeUpdateListener(mediaListenersRef.current.update);
+      } catch (e) {
+        // Ignore errors when removing
+      }
+    }
+    if (mediaListenersRef.current.status && typeof mediaSession.removeStatusListener === 'function') {
+      try {
+        mediaSession.removeStatusListener(mediaListenersRef.current.status);
+      } catch (e) {
+        // Ignore errors when removing
+      }
+    }
+
     const onMediaUpdate = () => {
+      // Skip updates if we're currently seeking to prevent loops
+      if (isSeekingRef.current) {
+        return;
+      }
+
       try {
         const ctx = getCastContext();
         const session = ctx?.getCurrentSession();
@@ -377,34 +401,50 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               isMuted = receiver.volume.muted !== undefined ? receiver.volume.muted : isMuted;
             }
           } catch (e) {
-            console.log('Error getting receiver volume:', e);
+            // Silent fail
           }
         }
         
         const playerState = mediaSession.playerState;
-        // Get current time from media session
-        const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
-        const media = mediaSession.media;
-        
-        updateState({
-          mediaSession,
-          isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
-          currentTime,
-          duration: media?.duration || 0,
-          volume,
-          isMuted,
-        });
+        // Get current time from media session - only if not seeking
+        if (!isSeekingRef.current) {
+          const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
+          const media = mediaSession.media;
+          
+          updateState({
+            mediaSession,
+            isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
+            currentTime,
+            duration: media?.duration || 0,
+            volume,
+            isMuted,
+          });
+        } else {
+          // Only update non-time related state during seek
+          const media = mediaSession.media;
+          updateState({
+            mediaSession,
+            isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
+            duration: media?.duration || 0,
+            volume,
+            isMuted,
+          });
+        }
       } catch (e) {
-        console.log('Error in media update listener:', e);
+        // Silent fail
       }
     };
+
+    // Store listeners for later removal
+    mediaListenersRef.current.update = onMediaUpdate;
+    mediaListenersRef.current.status = onMediaUpdate;
 
     // Add listeners only if they exist
     if (typeof mediaSession.addUpdateListener === 'function') {
       try {
         mediaSession.addUpdateListener(onMediaUpdate);
       } catch (e) {
-        console.log('Error adding update listener:', e);
+        // Silent fail
       }
     }
     
@@ -412,10 +452,10 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       try {
         mediaSession.addStatusListener(onMediaUpdate);
       } catch (e) {
-        console.log('Error adding status listener:', e);
+        // Silent fail
       }
     }
-  }, [updateState]);
+  }, [updateState, getCastContext]);
 
   // Load media to Chromecast
   const loadMedia = useCallback(async (
@@ -455,16 +495,24 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(finalUrl, contentType);
       mediaInfo.metadata = new (window as any).chrome.cast.media.MusicTrackMediaMetadata();
       mediaInfo.metadata.title = title;
-      // Use LIVE stream type for better buffering and smoother playback
-      mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.LIVE;
+      // Use BUFFERED stream type for proper seeking and playback control
+      mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.BUFFERED;
 
       const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
       request.autoplay = true;
-      // Always start from 0 for new media - don't use currentTime from previous song
+      // Always start from 0 for new media
       request.currentTime = 0;
 
-      // Load media - simple approach without complex retry logic
+      // Mark that we're loading to prevent conflicts
+      isSeekingRef.current = true;
+
+      // Load media
       const mediaSession = await session.loadMedia(request);
+      
+      // Reset seeking flag after load completes
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 1000);
       
       if (mediaSession) {
         setMediaListeners(mediaSession);
@@ -606,6 +654,9 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     // Mark that we're seeking to prevent polling conflicts
     isSeekingRef.current = true;
     
+    // Optimistically update UI immediately
+    updateState({ currentTime: time });
+    
     const mediaSession = stateRef.current.mediaSession;
     if (!mediaSession) {
       // Try to get media session from current session
@@ -622,15 +673,14 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
               seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
             }
             await ms.seek(seekRequest);
-            // Don't call setMediaListeners again - it's already set
+            // Update state after successful seek
             updateState({ mediaSession: ms, currentTime: time, isPlaying: true });
-            // Wait longer before allowing polling to update again to prevent loops
+            // Wait before allowing polling to update again to prevent loops
             setTimeout(() => {
               isSeekingRef.current = false;
-            }, 2000);
+            }, 3000);
             return true;
           } catch (e) {
-            console.error('Error seeking:', e);
             isSeekingRef.current = false;
             return false;
           }
@@ -649,19 +699,18 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
         }
         await mediaSession.seek(seekRequest);
+        // Update state after successful seek
         updateState({ currentTime: time, isPlaying: true });
-        // Wait longer before allowing polling to update again to prevent loops
+        // Wait before allowing polling to update again to prevent loops
         setTimeout(() => {
           isSeekingRef.current = false;
-        }, 2000);
+        }, 3000);
         return true;
       } else {
-        console.error('seek() is not a function on mediaSession');
         isSeekingRef.current = false;
         return false;
       }
     } catch (error) {
-      console.error('Error seeking:', error);
       isSeekingRef.current = false;
       return false;
     }
@@ -1226,11 +1275,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             updateState({ mediaSession });
           }
           
-          // Update current time - but skip if we're currently seeking
+          // Update current time - but skip if we're currently seeking or loading
           if (!isSeekingRef.current) {
             const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
             // Only update if there's a significant difference to avoid unnecessary updates
-            if (Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
+            // Also check that currentTime is valid (not NaN, not negative)
+            if (currentTime >= 0 && !isNaN(currentTime) && Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
               updateState({ currentTime });
             }
           }
