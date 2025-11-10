@@ -901,7 +901,13 @@ const MusicPlayer = ({
           });
           
           // Now that the buffer is ready, send seek command to Chromecast
+          // This will automatically resume playback after seek
           await chromecast.seek(seekTime);
+          
+          // Ensure playback resumes after seek
+          if (!isPlaying) {
+            await chromecast.play();
+          }
         } catch (error) {
           // If buffering fails, still try to seek (fallback)
           chromecast.seek(seekTime).catch(() => {

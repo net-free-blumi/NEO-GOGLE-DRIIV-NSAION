@@ -46,26 +46,30 @@ const UnifiedSpeakerSelector = ({
     // Get audio element reference
     audioRef.current = document.querySelector('audio') as HTMLAudioElement;
     
-    // Initialize Cast API callback
-    (window as any).__onGCastApiAvailable = function(isAvailable: boolean) {
-      console.log('Chromecast API available:', isAvailable);
-      if (isAvailable) {
-        // Initialize Cast Context
-        try {
-          const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
-          if (ctx) {
-            ctx.setOptions({
-              receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-              autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
-            });
-            console.log('Chromecast Context initialized');
+    // Initialize Cast API callback - wrap in try-catch to prevent async response errors
+    try {
+      (window as any).__onGCastApiAvailable = function(isAvailable: boolean) {
+        if (isAvailable) {
+          // Initialize Cast Context
+          try {
+            const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+            if (ctx) {
+              ctx.setOptions({
+                receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+              });
+              discoverSpeakers();
+            }
+          } catch (e) {
+            // Silent fail - Chromecast initialization error
           }
-        } catch (e) {
-          console.error('Error initializing Chromecast:', e);
         }
-        discoverSpeakers();
-      }
-    };
+        // Don't return true to prevent async response errors
+        return false;
+      };
+    } catch (e) {
+      // Silent fail - callback setup error
+    }
     
     // Check if Cast API is already loaded
     if ((window as any).cast?.framework) {
