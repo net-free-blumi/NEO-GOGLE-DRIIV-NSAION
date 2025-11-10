@@ -380,7 +380,7 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     }
 
     const onMediaUpdate = () => {
-      // Skip updates if we're currently seeking to prevent loops
+      // Skip ALL updates if we're currently seeking to prevent loops
       if (isSeekingRef.current) {
         return;
       }
@@ -406,11 +406,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         }
         
         const playerState = mediaSession.playerState;
-        // Get current time from media session - only if not seeking
-        if (!isSeekingRef.current) {
-          const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
-          const media = mediaSession.media;
-          
+        // Get current time from media session
+        const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
+        const media = mediaSession.media;
+        
+        // Only update if currentTime is valid and we're not seeking
+        if (currentTime >= 0 && !isNaN(currentTime) && !isSeekingRef.current) {
           updateState({
             mediaSession,
             isPlaying: playerState === (window as any).chrome.cast.media.PlayerState.PLAYING,
@@ -668,12 +669,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           try {
             const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
             seekRequest.currentTime = time;
-            // Try to set resumeState if available, otherwise skip it
+            // Always set resumeState to PLAYBACK_START to ensure autoplay after seek
             if ((window as any).chrome?.cast?.media?.ResumeState) {
               seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
             }
             await ms.seek(seekRequest);
-            // Update state after successful seek
+            // Update state after successful seek - ensure isPlaying is true
             updateState({ mediaSession: ms, currentTime: time, isPlaying: true });
             // Wait before allowing polling to update again to prevent loops
             setTimeout(() => {
@@ -694,12 +695,12 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       if (typeof mediaSession.seek === 'function') {
         const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
         seekRequest.currentTime = time;
-        // Try to set resumeState if available, otherwise skip it
+        // Always set resumeState to PLAYBACK_START to ensure autoplay after seek
         if ((window as any).chrome?.cast?.media?.ResumeState) {
           seekRequest.resumeState = (window as any).chrome.cast.media.ResumeState.PLAYBACK_START;
         }
         await mediaSession.seek(seekRequest);
-        // Update state after successful seek
+        // Update state after successful seek - ensure isPlaying is true
         updateState({ currentTime: time, isPlaying: true });
         // Wait before allowing polling to update again to prevent loops
         setTimeout(() => {
