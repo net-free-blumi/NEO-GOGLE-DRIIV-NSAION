@@ -620,10 +620,10 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             await ms.seek(seekRequest);
             // Don't call setMediaListeners again - it's already set
             updateState({ mediaSession: ms, currentTime: time });
-            // Wait a bit before allowing polling to update again
+            // Wait longer before allowing polling to update again to prevent loops
             setTimeout(() => {
               isSeekingRef.current = false;
-            }, 1000);
+            }, 2000);
             return true;
           } catch (e) {
             console.error('Error seeking:', e);
@@ -642,10 +642,10 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         seekRequest.currentTime = time;
         await mediaSession.seek(seekRequest);
         updateState({ currentTime: time });
-        // Wait a bit before allowing polling to update again
+        // Wait longer before allowing polling to update again to prevent loops
         setTimeout(() => {
           isSeekingRef.current = false;
-        }, 1000);
+        }, 2000);
         return true;
       } else {
         console.error('seek() is not a function on mediaSession');

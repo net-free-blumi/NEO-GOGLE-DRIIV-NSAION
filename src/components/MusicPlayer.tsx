@@ -87,11 +87,15 @@ const MusicPlayer = ({
   const lastUserVolumeRef = useRef<number | null>(null);
   const lastUserMuteRef = useRef<boolean | null>(null);
   const volumeChangeTimeRef = useRef<number>(0);
+  
+  // Track if we're currently seeking to prevent sync conflicts
+  const isSeekingRef = useRef(false);
+  const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync Chromecast state with local state (except volume/mute which user controls)
   useEffect(() => {
-    if (isChromecastActive) {
-      // Update current time from Chromecast - sync more frequently
+    if (isChromecastActive && !isSeekingRef.current) {
+      // Update current time from Chromecast - but skip if we're seeking
       setCurrentTime(chromecast.state.currentTime);
       
       // Update duration from Chromecast
@@ -817,11 +821,25 @@ const MusicPlayer = ({
     
     // If Chromecast is active, send seek command to it
     if (isChromecastActive) {
+      // Mark that we're seeking to prevent sync conflicts
+      isSeekingRef.current = true;
+      
+      // Clear any existing seek timeout
+      if (seekTimeoutRef.current) {
+        clearTimeout(seekTimeoutRef.current);
+      }
+      
       // Update optimistically for better UX
       setCurrentTime(seekTime);
+      
       // Send seek command - don't wait for it to complete
       chromecast.seek(seekTime).catch(() => {
         // Silent fail - error handling is in useChromecast
+      }).finally(() => {
+        // Wait longer before allowing sync again to prevent loops
+        seekTimeoutRef.current = setTimeout(() => {
+          isSeekingRef.current = false;
+        }, 2000);
       });
       return;
     }
