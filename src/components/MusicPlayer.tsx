@@ -162,7 +162,8 @@ const MusicPlayer = ({
       const MIN_BUFFER_SIZE_BYTES = MIN_BUFFER_SIZE_MB * 1024 * 1024;
       
       // Minimum buffer time: 5 minutes (300 seconds) - enough for smooth playback
-      const MIN_BUFFER_TIME_SECONDS = 300;
+      // But we need at least 5-10 MB, which is about 5-10 minutes at 128 kbps
+      const MIN_BUFFER_TIME_SECONDS = 300; // 5 minutes minimum
       
       // Timeout after 60 seconds (fallback - but should resolve before)
       const timeout = setTimeout(() => {
@@ -207,9 +208,9 @@ const MusicPlayer = ({
           const estimatedBytesPerSecond = 16000; // ~128 kbps = 16 KB/s
           const estimatedBufferedBytes = totalBuffered * estimatedBytesPerSecond;
           
-          // Check if we have enough buffer time (at least 10 minutes)
+          // Check if we have enough buffer time (at least 5 minutes)
           const hasEnoughBufferTime = totalBuffered >= MIN_BUFFER_TIME_SECONDS;
-          // Check if we have enough buffer bytes (at least 10 MB)
+          // Check if we have enough buffer bytes (at least 10 MB) - THIS IS THE KEY REQUIREMENT
           const hasEnoughBufferBytes = estimatedBufferedBytes >= MIN_BUFFER_SIZE_BYTES;
           // Check if position is buffered
           const positionBuffered = hasBufferAtPosition || bufferAfterPosition > 30; // At least 30 seconds after position
@@ -223,9 +224,10 @@ const MusicPlayer = ({
             lastProgressTime = now;
           }
           
-          // Only resolve if we have enough buffer AND position is buffered AND readyState is good
+          // CRITICAL: Only resolve if we have enough buffer BYTES (5-10 MB) AND position is buffered AND readyState is good
           // AND we've had at least 5 progress checks (to ensure we're downloading)
-          if ((hasEnoughBufferTime || hasEnoughBufferBytes) && positionBuffered && readyStateGood && progressCheckCount >= 5) {
+          // MUST have at least 5-10 MB downloaded before playing!
+          if (hasEnoughBufferBytes && positionBuffered && readyStateGood && progressCheckCount >= 5) {
             clearTimeout(timeout);
             audio.removeEventListener('progress', checkBuffer);
             audio.removeEventListener('canplay', checkBuffer);
@@ -1038,7 +1040,11 @@ const MusicPlayer = ({
         clearTimeout(seekTimeoutRef.current);
       }
       
-      // Update optimistically for better UX
+      // Show loading state immediately - user needs to see what's happening
+      setIsLoading(true);
+      setIsBuffering(true);
+      
+      // Update optimistically for better UX - show where we're seeking to
       setCurrentTime(seekTime);
       
       // First, buffer the new position locally (same as loading new song)
@@ -1067,20 +1073,56 @@ const MusicPlayer = ({
           audio.currentTime = seekTime;
           
           // Wait for the audio to buffer the new position (5-10 MB minimum)
+          // This ensures we download the relevant part before playing
           await waitForBuffer(audio, seekTime);
           
           // Now reload media with new currentTime (exactly like loading new song)
           // This ensures the new part is downloaded and autoplay works
           isLoadingRef.current = true;
+          setIsLoading(true);
+          setIsBuffering(false); // Buffer is ready, now loading to Chromecast
+          
           await chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime);
-          isLoadingRef.current = false;
+          
+          // Media is loaded, now wait a bit for Chromecast to buffer
+          // Then play automatically
+          setTimeout(async () => {
+            try {
+              await chromecast.play();
+              setIsLoading(false);
+              setIsBuffering(false);
+              isLoadingRef.current = false;
+            } catch (error) {
+              // Silent fail - will retry
+              setIsLoading(false);
+              setIsBuffering(false);
+              isLoadingRef.current = false;
+            }
+          }, 2000); // Wait 2 seconds for Chromecast to buffer
           
         } catch (error) {
           // If buffering fails, still try to reload (fallback)
           isLoadingRef.current = true;
+          setIsLoading(true);
+          setIsBuffering(true);
+          
           chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime)
+            .then(async () => {
+              // Wait a bit then play automatically
+              setTimeout(async () => {
+                try {
+                  await chromecast.play();
+                  setIsLoading(false);
+                  setIsBuffering(false);
+                } catch (error) {
+                  setIsLoading(false);
+                  setIsBuffering(false);
+                }
+              }, 2000);
+            })
             .catch(() => {
-              // Silent fail
+              setIsLoading(false);
+              setIsBuffering(false);
             })
             .finally(() => {
               isLoadingRef.current = false;
@@ -1089,20 +1131,37 @@ const MusicPlayer = ({
           // Wait before allowing sync again to prevent loops
           seekTimeoutRef.current = setTimeout(() => {
             isSeekingRef.current = false;
-          }, 2000);
+          }, 3000);
         }
       } else {
         // Fallback: reload media directly if audio element not available
         isLoadingRef.current = true;
+        setIsLoading(true);
+        setIsBuffering(true);
+        
         chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime)
+          .then(async () => {
+            // Wait a bit then play automatically
+            setTimeout(async () => {
+              try {
+                await chromecast.play();
+                setIsLoading(false);
+                setIsBuffering(false);
+              } catch (error) {
+                setIsLoading(false);
+                setIsBuffering(false);
+              }
+            }, 2000);
+          })
           .catch(() => {
-            // Silent fail
+            setIsLoading(false);
+            setIsBuffering(false);
           })
           .finally(() => {
             isLoadingRef.current = false;
             seekTimeoutRef.current = setTimeout(() => {
               isSeekingRef.current = false;
-            }, 2000);
+            }, 3000);
           });
       }
       return;
@@ -1110,15 +1169,90 @@ const MusicPlayer = ({
     
     // If external speaker is active, send seek command to it
     if (isExternalSpeakerActive) {
+      // Show loading state
+      setIsLoading(true);
+      setIsBuffering(true);
+      
       controlExternalSpeaker('seek', seekTime);
       setCurrentTime(seekTime);
+      
+      // Wait a bit then play automatically
+      setTimeout(() => {
+        if (isPlaying) {
+          controlExternalSpeaker('play');
+        }
+        setIsLoading(false);
+        setIsBuffering(false);
+      }, 1000);
       return;
     }
     
-    // Otherwise, control local audio
-    if (audioRef.current && duration > 0) {
-      audioRef.current.currentTime = seekTime;
+    // Otherwise, seek local audio
+    if (audioRef.current) {
+      const audio = audioRef.current;
+      
+      // Show loading state
+      setIsLoading(true);
+      setIsBuffering(true);
+      
+      // Update optimistically - show where we're seeking to
       setCurrentTime(seekTime);
+      
+      // If audio is loaded, seek immediately
+      if (audio.readyState > 0) {
+        audio.currentTime = seekTime;
+        
+        // Wait for buffer to download (5-10 MB) before playing
+        waitForBuffer(audio, seekTime).then(() => {
+          // Buffer is ready, now play automatically if we're supposed to play
+          if (isPlaying && audio.paused) {
+            audio.play().then(() => {
+              setIsLoading(false);
+              setIsBuffering(false);
+            }).catch((err) => {
+              console.error('Play error after seek:', err);
+              setIsLoading(false);
+              setIsBuffering(false);
+            });
+          } else {
+            setIsLoading(false);
+            setIsBuffering(false);
+          }
+        }).catch((err) => {
+          console.error('Buffer wait error after seek:', err);
+          setIsLoading(false);
+          setIsBuffering(false);
+        });
+      } else {
+        // If audio not loaded yet, wait for it to load then seek
+        const handleCanSeek = () => {
+          audio.removeEventListener('loadedmetadata', handleCanSeek);
+          audio.currentTime = seekTime;
+          
+          // Wait for buffer to download (5-10 MB) before playing
+          waitForBuffer(audio, seekTime).then(() => {
+            // Buffer is ready, now play automatically if we're supposed to play
+            if (isPlaying && audio.paused) {
+              audio.play().then(() => {
+                setIsLoading(false);
+                setIsBuffering(false);
+              }).catch((err) => {
+                console.error('Play error after seek:', err);
+                setIsLoading(false);
+                setIsBuffering(false);
+              });
+            } else {
+              setIsLoading(false);
+              setIsBuffering(false);
+            }
+          }).catch((err) => {
+            console.error('Buffer wait error after seek:', err);
+            setIsLoading(false);
+            setIsBuffering(false);
+          });
+        };
+        audio.addEventListener('loadedmetadata', handleCanSeek);
+      }
     }
   };
 
