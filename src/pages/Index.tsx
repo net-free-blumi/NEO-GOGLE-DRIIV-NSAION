@@ -324,6 +324,7 @@ const Index = () => {
           onPrevious={handlePrevious}
           onStop={handleStop}
           selectedSpeaker={selectedSpeaker}
+          onSpeakerChange={setSelectedSpeaker}
           repeatMode={repeatMode}
           onRepeatModeChange={setRepeatMode}
         />

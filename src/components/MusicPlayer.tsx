@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, X, Maximize2, Cast } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2, Square, X, Maximize2, Cast, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Song } from "@/pages/Index";
@@ -16,6 +16,7 @@ interface MusicPlayerProps {
   onPrevious: () => void;
   onStop?: () => void;
   selectedSpeaker: string | null;
+  onSpeakerChange?: (speaker: string | null) => void;
   repeatMode?: 'none' | 'one' | 'all';
   onRepeatModeChange?: (mode: 'none' | 'one' | 'all') => void;
 }
@@ -28,6 +29,7 @@ const MusicPlayer = ({
   onPrevious,
   onStop,
   selectedSpeaker,
+  onSpeakerChange,
   repeatMode = 'none',
   onRepeatModeChange,
 }: MusicPlayerProps) => {
@@ -1503,14 +1505,34 @@ const MusicPlayer = ({
                   {song.artist}
                 </p>
                 {selectedSpeaker && (
-                  <p className="text-[9px] sm:text-[10px] md:text-xs text-primary flex items-center gap-1 mt-0.5">
-                    <span className="w-1 h-1 rounded-full bg-primary animate-pulse flex-shrink-0" />
-                    <span className="truncate">
-                      {isChromecastActive && chromecast.state.device 
-                        ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
-                        : selectedSpeaker}
-                    </span>
-                  </p>
+                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                    <p className="text-[9px] sm:text-[10px] md:text-xs text-primary flex items-center gap-1 flex-1 min-w-0">
+                      <span className="w-1 h-1 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                      <span className="truncate">
+                        מחובר: {isChromecastActive && chromecast.state.device 
+                          ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'רמקול')
+                          : (selectedSpeakerData?.name || selectedSpeaker)}
+                      </span>
+                    </p>
+                    {onSpeakerChange && (
+                      <button
+                        onClick={async () => {
+                          if (isChromecastActive && chromecast.state.isConnected) {
+                            await chromecast.disconnect();
+                          }
+                          onSpeakerChange(null);
+                          toast({
+                            title: "רמקול מנותק",
+                            description: "מנגן כעת במכשיר זה",
+                          });
+                        }}
+                        className="flex-shrink-0 p-0.5 hover:bg-destructive/20 rounded transition-colors touch-manipulation"
+                        title="נתק רמקול"
+                      >
+                        <XCircle className="w-3 h-3 text-destructive" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1696,14 +1718,34 @@ const MusicPlayer = ({
                 {song.artist}
               </p>
               {selectedSpeaker && (
-                <p className="text-[10px] sm:text-xs md:text-sm text-primary flex items-center justify-center gap-1.5 sm:gap-2 mt-2 max-w-[90vw] mx-auto">
-                  <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-                  <span className="line-clamp-2 text-center">
-                    מנגן ב-{isChromecastActive && chromecast.state.device 
-                      ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast')
-                      : selectedSpeaker}
-                  </span>
-                </p>
+                <div className="flex items-center justify-center gap-1.5 sm:gap-2 mt-2 max-w-[90vw] mx-auto">
+                  <p className="text-[10px] sm:text-xs md:text-sm text-primary flex items-center justify-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+                    <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                    <span className="line-clamp-2 text-center">
+                      מחובר: {isChromecastActive && chromecast.state.device 
+                        ? (chromecast.state.device.name || chromecast.state.device.friendlyName || 'רמקול')
+                        : (selectedSpeakerData?.name || selectedSpeaker)}
+                    </span>
+                  </p>
+                  {onSpeakerChange && (
+                    <button
+                      onClick={async () => {
+                        if (isChromecastActive && chromecast.state.isConnected) {
+                          await chromecast.disconnect();
+                        }
+                        onSpeakerChange(null);
+                        toast({
+                          title: "רמקול מנותק",
+                          description: "מנגן כעת במכשיר זה",
+                        });
+                      }}
+                      className="flex-shrink-0 p-1 hover:bg-destructive/20 rounded transition-colors touch-manipulation"
+                      title="נתק רמקול"
+                    >
+                      <XCircle className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
