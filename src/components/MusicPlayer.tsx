@@ -342,17 +342,28 @@ const MusicPlayer = ({
       setIsLoading(false);
       setIsBuffering(false);
       
-      // Check if it's an authentication error (401/403)
+      // Check if it's an authentication error (401/403) or network error
       const target = e.target as HTMLAudioElement;
       if (target.error) {
         const errorCode = target.error.code;
         if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || errorCode === MediaError.MEDIA_ERR_NETWORK) {
-          toast({
-            title: 'שגיאה בטעינת השיר',
-            description: 'לא הצלחנו לטעון את השיר. נא לבדוק את החיבור ל-Google Drive.',
-            variant: 'destructive',
-            duration: 5000,
-          });
+          // Check if Google Drive token exists
+          const accessToken = sessionStorage.getItem('gd_access_token');
+          if (!accessToken) {
+            toast({
+              title: 'מנותק מחשבון Google',
+              description: 'נא להתחבר מחדש ל-Google Drive כדי להמשיך להאזין למוזיקה.',
+              variant: 'destructive',
+              duration: 5000,
+            });
+          } else {
+            toast({
+              title: 'שגיאה בטעינת השיר',
+              description: 'לא הצלחנו לטעון את השיר. נא לבדוק את החיבור ל-Google Drive.',
+              variant: 'destructive',
+              duration: 5000,
+            });
+          }
         }
       }
     };
@@ -829,8 +840,8 @@ const MusicPlayer = ({
   const handleSeek = async (value: number[]) => {
     const seekTime = value[0];
     
-    // If Chromecast is active, reload media with new currentTime (like loading new song)
-    if (isChromecastActive && song.url) {
+    // If Chromecast is active, use seek (not reload) to prevent loops
+    if (isChromecastActive) {
       // Mark that we're seeking to prevent sync conflicts
       isSeekingRef.current = true;
       
@@ -842,111 +853,23 @@ const MusicPlayer = ({
       // Update optimistically for better UX
       setCurrentTime(seekTime);
       
-      // First, buffer the new position locally (same as loading new song)
-      const audio = audioRef.current;
-      if (audio && song.url) {
-        try {
-          // Get token for Netlify functions
-          const accessToken = sessionStorage.getItem('gd_access_token');
-          let finalUrl = song.url;
-          const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
-          
-          if (isNetlify && accessToken) {
-            const separator = song.url.includes('?') ? '&' : '?';
-            finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-          } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
-            const separator = song.url.includes('?') ? '&' : '?';
-            finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
-          }
-          
-          // Set src if different
-          if (audio.src !== finalUrl) {
-            audio.src = finalUrl;
-          }
-          
-          // Set currentTime to seek position to start buffering
-          audio.currentTime = seekTime;
-          
-          // Wait for the audio to buffer the new position (same as loading new song)
-          await new Promise<void>((resolve) => {
-            const timeout = setTimeout(() => {
-              // Timeout - continue anyway (Chromecast will buffer)
-              resolve();
-            }, 2000);
-            
-            const checkBuffer = () => {
-              // Check if we have enough buffer at the seek position
-              const buffered = audio.buffered;
-              let hasBuffer = false;
-              
-              for (let i = 0; i < buffered.length; i++) {
-                const start = buffered.start(i);
-                const end = buffered.end(i);
-                // Check if seek position is within buffered range
-                if (seekTime >= start - 0.5 && seekTime <= end + 0.5) {
-                  hasBuffer = true;
-                  break;
-                }
-              }
-              
-              // Also check if readyState is good enough
-              if (hasBuffer && audio.readyState >= 2) {
-                clearTimeout(timeout);
-                audio.removeEventListener('progress', checkBuffer);
-                audio.removeEventListener('canplay', checkBuffer);
-                audio.removeEventListener('canplaythrough', checkBuffer);
-                resolve();
-              }
-            };
-            
-            // Check immediately
-            if (audio.readyState >= 2) {
-              checkBuffer();
-            }
-            
-            // Listen for buffer events
-            audio.addEventListener('progress', checkBuffer);
-            audio.addEventListener('canplay', checkBuffer);
-            audio.addEventListener('canplaythrough', checkBuffer);
-          });
-          
-          // Now reload media with new currentTime (exactly like loading new song)
-          // This ensures autoplay and proper buffering
-          // Update refs to prevent conflicts
-          lastLoadedTimeRef.current = seekTime;
-          isLoadingRef.current = true;
-          await chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime);
-          isLoadingRef.current = false;
-          
-        } catch (error) {
-          // If buffering fails, still try to reload (fallback)
-          isLoadingRef.current = true;
-          chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime)
-            .catch(() => {
-              // Silent fail
-            })
-            .finally(() => {
-              isLoadingRef.current = false;
-            });
-        } finally {
-          // Wait before allowing sync again to prevent loops
-          seekTimeoutRef.current = setTimeout(() => {
-            isSeekingRef.current = false;
-          }, 2000);
+      // Use seek directly - simpler and more reliable than reload
+      // Chromecast SDK handles buffering internally
+      try {
+        await chromecast.seek(seekTime);
+        // Ensure playback resumes after seek
+        if (!isPlaying) {
+          setTimeout(async () => {
+            await chromecast.play();
+          }, 300);
         }
-      } else {
-        // Fallback: reload media directly if audio element not available
-        isLoadingRef.current = true;
-        chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime)
-          .catch(() => {
-            // Silent fail
-          })
-          .finally(() => {
-            isLoadingRef.current = false;
-            seekTimeoutRef.current = setTimeout(() => {
-              isSeekingRef.current = false;
-            }, 2000);
-          });
+      } catch (error) {
+        // Silent fail - error handling is in useChromecast
+      } finally {
+        // Wait before allowing sync again to prevent loops
+        seekTimeoutRef.current = setTimeout(() => {
+          isSeekingRef.current = false;
+        }, 3000);
       }
       return;
     }

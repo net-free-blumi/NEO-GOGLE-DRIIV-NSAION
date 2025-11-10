@@ -160,10 +160,11 @@ const Index = () => {
   };
 
   const handleStop = () => {
-    // Stop completely - reset position to 0, pause, and clear saved position
+    // Stop completely - clear song, reset position to 0, pause, and clear saved position
     if (currentSong) {
       sessionStorage.removeItem(`song_position_${currentSong.id}`);
       setIsPlaying(false);
+      setCurrentSong(null); // Clear the song completely - user needs to select a new one
       // The MusicPlayer component will handle resetting the audio position
     }
   };

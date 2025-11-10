@@ -283,18 +283,28 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       return true;
     } catch (error: any) {
       console.error('Error connecting to Chromecast:', error);
-      updateState({ isConnecting: false });
+      updateState({ isConnecting: false, isConnected: false });
       
-      if (error.code === 'cancel' || error.code === 'session_error') {
-        // User cancelled or session error - don't show error, just return false
-        // session_error usually means user cancelled or device unavailable
+      if (error.code === 'cancel') {
+        // User cancelled - don't show error, just return false
         return false;
       }
       
-      // Only show error for other types of errors
-      if (error.code !== 'session_error') {
-        options.onError?.(new Error(error.message || 'לא ניתן להתחבר ל-Chromecast'));
+      if (error.code === 'session_error') {
+        // Session error - try to get existing session first
+        const existingSession = ctx?.getCurrentSession();
+        if (existingSession) {
+          // We have an existing session, use it
+          checkExistingSession();
+          return true;
+        }
+        // No existing session - show error
+        options.onError?.(new Error('החיבור נותק. נסה להתחבר שוב.'));
+        return false;
       }
+      
+      // Show error for other types of errors
+      options.onError?.(new Error(error.message || 'לא ניתן להתחבר ל-Chromecast'));
       return false;
     }
   }, [getCastContext, updateState, options]);
