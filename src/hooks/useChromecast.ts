@@ -462,7 +462,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   const loadMedia = useCallback(async (
     url: string,
     title: string,
-    contentType: string = 'audio/mpeg'
+    contentType: string = 'audio/mpeg',
+    startTime: number = 0
   ): Promise<boolean> => {
     const ctx = getCastContext();
     if (!ctx) {
@@ -501,8 +502,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
       const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
       request.autoplay = true;
-      // Always start from 0 for new media
-      request.currentTime = 0;
+      // Use startTime parameter (0 for new media, or seek time for seeking)
+      request.currentTime = startTime;
 
       // Mark that we're loading to prevent conflicts
       isSeekingRef.current = true;
