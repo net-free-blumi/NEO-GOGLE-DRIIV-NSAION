@@ -357,12 +357,23 @@ const MusicPlayer = ({
               duration: 5000,
             });
           } else {
-            toast({
-              title: 'שגיאה בטעינת השיר',
-              description: 'לא הצלחנו לטעון את השיר. נא לבדוק את החיבור ל-Google Drive.',
-              variant: 'destructive',
-              duration: 5000,
-            });
+            // Check if it's a 504 timeout error
+            const src = target.src || '';
+            if (src.includes('netlify') || src.includes('504')) {
+              toast({
+                title: 'שגיאת זמן המתנה',
+                description: 'השרת לא הגיב בזמן. נסה שוב או בדוק את החיבור לאינטרנט.',
+                variant: 'destructive',
+                duration: 5000,
+              });
+            } else {
+              toast({
+                title: 'שגיאה בטעינת השיר',
+                description: 'לא הצלחנו לטעון את השיר. נא לבדוק את החיבור ל-Google Drive.',
+                variant: 'destructive',
+                duration: 5000,
+              });
+            }
           }
         }
       }
@@ -930,9 +941,9 @@ const MusicPlayer = ({
             </div>
             {(isLoading || isBuffering) && (
               <div className="flex items-center justify-center gap-2 mt-2">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-xs text-muted-foreground">
-                  {isLoading ? 'טוען...' : 'מוריד...'}
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span className="text-sm font-medium text-foreground">
+                  {isLoading ? 'טוען שיר...' : 'מוריד...'}
                 </span>
               </div>
             )}
@@ -1188,9 +1199,9 @@ const MusicPlayer = ({
               </div>
               {(isLoading || isBuffering) && (
                 <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  <span className="text-sm text-muted-foreground">
-                    {isLoading ? 'טוען...' : 'מוריד...'}
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="text-sm font-medium text-foreground">
+                    {isLoading ? 'טוען שיר...' : 'מוריד...'}
                   </span>
                 </div>
               )}
