@@ -457,56 +457,11 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
       const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
       request.autoplay = true;
-      // Always start from 0 for new media - check if it's the same song
-      const isSameSong = stateRef.current.currentMedia?.url === url;
-      request.currentTime = isSameSong ? (stateRef.current.currentTime || 0) : 0;
+      // Always start from 0 for new media - don't use currentTime from previous song
+      request.currentTime = 0;
 
-      // Try to load media - with retry logic for connection issues
-      let mediaSession = null;
-      let retries = 0;
-      const maxRetries = 2;
-      
-      while (retries <= maxRetries && !mediaSession) {
-        try {
-          // Check if session is still valid before retry
-          if (retries > 0) {
-            const currentSession = ctx.getCurrentSession();
-            if (!currentSession) {
-              // Session lost, try to reconnect
-              const connected = await connect();
-              if (!connected) {
-                throw new Error('session_error');
-              }
-              session = ctx.getCurrentSession();
-              if (!session) {
-                throw new Error('session_error');
-              }
-            } else {
-              session = currentSession;
-            }
-            // Wait a bit before retry
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-          
-          mediaSession = await Promise.race([
-            session.loadMedia(request),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('timeout')), 10000)
-            )
-          ]) as any;
-        } catch (error: any) {
-          // Check if it's a retryable error
-          const isRetryable = error.message === 'timeout' || 
-                             error.code === 'session_error' || 
-                             error.code === 'invalid_parameter';
-          
-          if (isRetryable && retries < maxRetries) {
-            retries++;
-            continue;
-          }
-          throw error;
-        }
-      }
+      // Load media - simple approach without complex retry logic
+      const mediaSession = await session.loadMedia(request);
       
       if (mediaSession) {
         setMediaListeners(mediaSession);
