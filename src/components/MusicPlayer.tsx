@@ -151,8 +151,6 @@ const MusicPlayer = ({
       }
       // Continue to load the audio for buffering purposes (don't return early)
     }
-
-    const audio = audioRef.current;
     
     // Helper function to refresh token if needed
     const refreshTokenIfNeeded = async (): Promise<string | null> => {
