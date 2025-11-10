@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 
-const VERSION = "4.3.6"; // עדכן את זה בכל שינוי משמעותי
+const VERSION = "4.3.7"; // עדכן את זה בכל שינוי משמעותי
 
 export const VersionBadge = () => {
   return (
