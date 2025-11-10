@@ -33,6 +33,8 @@ const SpeakerSelector = ({
   useEffect(() => {
     (window as any).__onGCastApiAvailable = function(isAvailable: boolean) {
       if (isAvailable) discoverSpeakers();
+      // Don't return true to prevent async response errors
+      return false;
     };
     discoverSpeakers();
   }, []);

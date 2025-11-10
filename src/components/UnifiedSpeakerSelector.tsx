@@ -82,10 +82,17 @@ const UnifiedSpeakerSelector = ({
           try {
             const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
             if (ctx) {
-              ctx.setOptions({
+              // Set options safely - check if properties exist
+              const options: any = {
                 receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-                autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
-              });
+              };
+              
+              // Only add autoJoinPolicy if it exists
+              if ((window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED !== undefined) {
+                options.autoJoinPolicy = (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED;
+              }
+              
+              ctx.setOptions(options);
               discoverSpeakers();
             }
           } catch (e) {
@@ -104,10 +111,17 @@ const UnifiedSpeakerSelector = ({
       console.log('Chromecast framework already loaded');
       const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
       if (ctx) {
-        ctx.setOptions({
+        // Set options safely - check if properties exist
+        const options: any = {
           receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-          autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
-        });
+        };
+        
+        // Only add autoJoinPolicy if it exists
+        if ((window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED !== undefined) {
+          options.autoJoinPolicy = (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED;
+        }
+        
+        ctx.setOptions(options);
       }
       discoverSpeakers();
     }

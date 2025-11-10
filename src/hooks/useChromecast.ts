@@ -153,11 +153,17 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         return true;
       }
 
-      ctx.setOptions({
+      // Set options safely - check if properties exist
+      const options: any = {
         receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-        // Enable discovery of all Cast-enabled devices including Smart TVs
-        autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-      });
+      };
+      
+      // Only add autoJoinPolicy if it exists
+      if ((window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED !== undefined) {
+        options.autoJoinPolicy = (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED;
+      }
+      
+      ctx.setOptions(options);
 
       // Request session - this will show device picker with all available devices
       // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
@@ -511,11 +517,23 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
     }
 
     try {
+      // Validate URL
+      if (!url || typeof url !== 'string' || url.trim() === '') {
+        options.onError?.(new Error('כתובת המדיה לא תקינה'));
+        return false;
+      }
+
       // Get token for Netlify functions
       const accessToken = sessionStorage.getItem('gd_access_token');
       const finalUrl = accessToken && url.includes('netlify') 
         ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(accessToken)}`
         : url;
+
+      // Validate Chrome Cast API is available
+      if (!(window as any).chrome?.cast?.media) {
+        options.onError?.(new Error('Chromecast API לא זמין'));
+        return false;
+      }
 
       const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(finalUrl, contentType);
       mediaInfo.metadata = new (window as any).chrome.cast.media.MusicTrackMediaMetadata();
@@ -532,8 +550,26 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       // Mark that we're loading to prevent conflicts
       isSeekingRef.current = true;
 
-      // Load media
-      const mediaSession = await session.loadMedia(request);
+      // Load media with better error handling
+      let mediaSession;
+      try {
+        mediaSession = await session.loadMedia(request);
+      } catch (loadError: any) {
+        // Reset seeking flag on error
+        isSeekingRef.current = false;
+        
+        // Handle specific error codes
+        if (loadError.code === 'invalid_parameter') {
+          options.onError?.(new Error('פרמטרים לא תקינים. ודא שה-URL תקין.'));
+          return false;
+        }
+        if (loadError.code === 'cancel') {
+          // User cancelled - don't show error
+          return false;
+        }
+        // Re-throw to be caught by outer catch
+        throw loadError;
+      }
       
       // Reset seeking flag after load completes
       setTimeout(() => {

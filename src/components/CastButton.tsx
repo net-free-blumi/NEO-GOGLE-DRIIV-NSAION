@@ -25,8 +25,10 @@ const CastButton = ({ mediaUrl, contentType = "audio/mpeg", title = "Track" }: C
 
   useEffect(() => {
     // The Cast SDK is loaded once in index.html; just detect availability
-    (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+    (window as any).__onGCastApiAvailable = function(isAvailable: boolean) {
       if (isAvailable) setCastAvailable(true);
+      // Don't return true to prevent async response errors
+      return false;
     };
     if ((window as any).cast?.framework) {
       setCastAvailable(true);
@@ -49,9 +51,17 @@ const CastButton = ({ mediaUrl, contentType = "audio/mpeg", title = "Track" }: C
         return;
       }
 
-      ctx.setOptions({
+      // Set options safely - check if properties exist
+      const options: any = {
         receiverApplicationId: window.chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-      });
+      };
+      
+      // Only add autoJoinPolicy if it exists
+      if (window.chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED !== undefined) {
+        options.autoJoinPolicy = window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED;
+      }
+      
+      ctx.setOptions(options);
 
       const session = ctx.getCurrentSession() || (await ctx.requestSession().catch(() => null));
       if (!session) {
