@@ -46,6 +46,9 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
 
   const stateRef = useRef(state);
   stateRef.current = state;
+  
+  // Track if we're currently seeking to prevent polling conflicts
+  const isSeekingRef = useRef(false);
 
   // Update state and notify listeners
   const updateState = useCallback((updates: Partial<ChromecastState>) => {
@@ -600,6 +603,9 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
   }, [updateState]);
 
   const seek = useCallback(async (time: number) => {
+    // Mark that we're seeking to prevent polling conflicts
+    isSeekingRef.current = true;
+    
     const mediaSession = stateRef.current.mediaSession;
     if (!mediaSession) {
       // Try to get media session from current session
@@ -612,15 +618,21 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             const seekRequest = new (window as any).chrome.cast.media.SeekRequest();
             seekRequest.currentTime = time;
             await ms.seek(seekRequest);
-            setMediaListeners(ms);
+            // Don't call setMediaListeners again - it's already set
             updateState({ mediaSession: ms, currentTime: time });
+            // Wait a bit before allowing polling to update again
+            setTimeout(() => {
+              isSeekingRef.current = false;
+            }, 1000);
             return true;
           } catch (e) {
             console.error('Error seeking:', e);
+            isSeekingRef.current = false;
             return false;
           }
         }
       }
+      isSeekingRef.current = false;
       return false;
     }
 
@@ -630,16 +642,22 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         seekRequest.currentTime = time;
         await mediaSession.seek(seekRequest);
         updateState({ currentTime: time });
+        // Wait a bit before allowing polling to update again
+        setTimeout(() => {
+          isSeekingRef.current = false;
+        }, 1000);
         return true;
       } else {
         console.error('seek() is not a function on mediaSession');
+        isSeekingRef.current = false;
         return false;
       }
     } catch (error) {
       console.error('Error seeking:', error);
+      isSeekingRef.current = false;
       return false;
     }
-  }, [updateState, getCastContext, setMediaListeners]);
+  }, [updateState, getCastContext]);
 
   const setVolume = useCallback(async (volume: number): Promise<boolean> => {
     const ctx = getCastContext();
@@ -1200,10 +1218,13 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             updateState({ mediaSession });
           }
           
-          // Update current time
-          const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
-          if (Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
-            updateState({ currentTime });
+          // Update current time - but skip if we're currently seeking
+          if (!isSeekingRef.current) {
+            const currentTime = mediaSession.getEstimatedTime ? mediaSession.getEstimatedTime() : (mediaSession.currentTime || 0);
+            // Only update if there's a significant difference to avoid unnecessary updates
+            if (Math.abs(currentTime - stateRef.current.currentTime) > 0.5) {
+              updateState({ currentTime });
+            }
           }
           
           // Update playing state
