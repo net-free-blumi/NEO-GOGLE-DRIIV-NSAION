@@ -151,6 +151,8 @@ const MusicPlayer = ({
   // Track loading state to prevent multiple loads
   const loadingSongRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isDownloadingRef = useRef(false); // Track if we're currently downloading
+  const currentAudioSrcRef = useRef<string | null>(null); // Track current audio src to prevent changes during download
   
   // Helper function to wait for buffer to download (10 MB minimum, or entire file if < 20 MB)
   const waitForBuffer = async (audio: HTMLAudioElement, startTime: number = 0): Promise<void> => {
@@ -317,10 +319,12 @@ const MusicPlayer = ({
     if (loadingSongRef.current !== song.id && abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+      isDownloadingRef.current = false;
+      currentAudioSrcRef.current = null;
     }
     
-    // If already loading this song, don't load again
-    if (loadingSongRef.current === song.id) {
+    // If already loading/downloading this song, don't load again
+    if (loadingSongRef.current === song.id || isDownloadingRef.current) {
       return;
     }
     
@@ -478,9 +482,36 @@ const MusicPlayer = ({
           // Check if aborted before setting src
           if (abortController.signal.aborted) return;
           
+          // Mark that we're downloading to prevent multiple requests
+          isDownloadingRef.current = true;
+          currentAudioSrcRef.current = finalUrl;
+          
           // Optimize audio element for streaming
-          audio.preload = 'none';
+          audio.preload = 'auto'; // Use 'auto' to ensure download starts
           audio.src = finalUrl;
+          
+          // Prevent src from changing during download
+          const originalSrc = finalUrl;
+          const checkSrc = () => {
+            if (audio.src !== originalSrc && isDownloadingRef.current) {
+              // Restore src if it was changed during download
+              audio.src = originalSrc;
+            }
+          };
+          
+          // Check src periodically to prevent changes
+          const srcCheckInterval = setInterval(() => {
+            if (!isDownloadingRef.current) {
+              clearInterval(srcCheckInterval);
+              return;
+            }
+            checkSrc();
+          }, 100);
+          
+          // Clear interval when download completes
+          audio.addEventListener('canplaythrough', () => {
+            clearInterval(srcCheckInterval);
+          }, { once: true });
         }
       }).catch((error: any) => {
         if (error.message === 'Aborted') return;
@@ -514,8 +545,8 @@ const MusicPlayer = ({
       setCurrentTime(0);
     }
     
-    // Set up streaming optimization
-    audio.setAttribute('preload', 'none');
+    // Set up streaming optimization - use 'auto' to ensure download starts
+    audio.setAttribute('preload', 'auto');
     
     // Add error handler for audio loading errors
     const handleAudioError = (e: any) => {
@@ -557,22 +588,40 @@ const MusicPlayer = ({
         }
       }
       loadingSongRef.current = null;
+      isDownloadingRef.current = false;
+      currentAudioSrcRef.current = null;
     };
     
     audio.addEventListener('error', handleAudioError);
     
+    // Mark download as complete when audio is ready
+    const handleCanPlayThrough = () => {
+      isDownloadingRef.current = false;
+      audio.removeEventListener('canplaythrough', handleCanPlayThrough);
+    };
+    audio.addEventListener('canplaythrough', handleCanPlayThrough);
+    
     // Only load when user wants to play AND it's a new song (not resuming)
     if (isPlaying && isNewSongOrNotLoaded) {
-      if (!abortController.signal.aborted) {
+      if (!abortController.signal.aborted && !isDownloadingRef.current) {
         // Show downloading state
         setIsLoading(true);
         setIsBuffering(true);
         
-        // Load the audio first
-        audio.load();
+        // Mark that we're downloading to prevent multiple requests
+        isDownloadingRef.current = true;
+        
+        // Load the audio first - ONLY ONCE
+        if (audio.src && !audio.src.includes('blob:')) {
+          // Only load if src is set and not a blob
+          audio.load();
+        }
         
         // Wait for buffer to download BEFORE playing (10 MB minimum, or entire file if < 20 MB)
         waitForBuffer(audio, 0).then(() => {
+          // Mark download as complete
+          isDownloadingRef.current = false;
+          
           // Double check: make sure we're still supposed to play and not aborted
           if (!abortController.signal.aborted && isPlaying && audio.paused) {
             // Buffer is ready, now play
@@ -590,6 +639,7 @@ const MusicPlayer = ({
           }
         }).catch((err) => {
           console.error('Buffer wait error:', err);
+          isDownloadingRef.current = false;
           setIsLoading(false);
           setIsBuffering(false);
         });
@@ -1092,8 +1142,11 @@ const MusicPlayer = ({
       
       // First, buffer the new position locally (same as loading new song)
       const audio = audioRef.current;
-      if (audio && song.url) {
+      if (audio && song.url && !isDownloadingRef.current) {
         try {
+          // Mark that we're downloading to prevent multiple requests
+          isDownloadingRef.current = true;
+          
           // Get token for Netlify functions
           const accessToken = sessionStorage.getItem('gd_access_token');
           let finalUrl = song.url;
@@ -1107,17 +1160,45 @@ const MusicPlayer = ({
             finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
           }
           
-          // Set src if different
+          // Set src if different - ONLY ONCE
           if (audio.src !== finalUrl) {
+            currentAudioSrcRef.current = finalUrl;
+            audio.preload = 'auto'; // Use 'auto' to ensure download starts
             audio.src = finalUrl;
+            
+            // Prevent src from changing during download
+            const originalSrc = finalUrl;
+            const checkSrc = () => {
+              if (audio.src !== originalSrc && isDownloadingRef.current) {
+                // Restore src if it was changed during download
+                audio.src = originalSrc;
+              }
+            };
+            
+            // Check src periodically to prevent changes
+            const srcCheckInterval = setInterval(() => {
+              if (!isDownloadingRef.current) {
+                clearInterval(srcCheckInterval);
+                return;
+              }
+              checkSrc();
+            }, 100);
+            
+            // Clear interval when download completes
+            audio.addEventListener('canplaythrough', () => {
+              clearInterval(srcCheckInterval);
+            }, { once: true });
           }
           
           // Set currentTime to seek position to start buffering
           audio.currentTime = seekTime;
           
-          // Wait for the audio to buffer the new position (5-10 MB minimum)
+          // Wait for the audio to buffer the new position (10 MB minimum, or entire file if < 20 MB)
           // This ensures we download the relevant part before playing
           await waitForBuffer(audio, seekTime);
+          
+          // Mark download as complete
+          isDownloadingRef.current = false;
           
           // Now reload media with new currentTime (exactly like loading new song)
           // This ensures the new part is downloaded and autoplay works
@@ -1144,6 +1225,9 @@ const MusicPlayer = ({
           }, 2000); // Wait 2 seconds for Chromecast to buffer
           
         } catch (error) {
+          // Mark download as complete even on error
+          isDownloadingRef.current = false;
+          
           // If buffering fails, still try to reload (fallback)
           isLoadingRef.current = true;
           setIsLoading(true);
@@ -1176,8 +1260,9 @@ const MusicPlayer = ({
             isSeekingRef.current = false;
           }, 3000);
         }
-      } else {
+      } else if (!isDownloadingRef.current) {
         // Fallback: reload media directly if audio element not available
+        isDownloadingRef.current = true;
         isLoadingRef.current = true;
         setIsLoading(true);
         setIsBuffering(true);
@@ -1201,6 +1286,7 @@ const MusicPlayer = ({
             setIsBuffering(false);
           })
           .finally(() => {
+            isDownloadingRef.current = false;
             isLoadingRef.current = false;
             seekTimeoutRef.current = setTimeout(() => {
               isSeekingRef.current = false;
@@ -1231,8 +1317,11 @@ const MusicPlayer = ({
     }
     
     // Otherwise, seek local audio
-    if (audioRef.current) {
+    if (audioRef.current && !isDownloadingRef.current) {
       const audio = audioRef.current;
+      
+      // Mark that we're downloading to prevent multiple requests
+      isDownloadingRef.current = true;
       
       // Show loading state
       setIsLoading(true);
@@ -1241,12 +1330,42 @@ const MusicPlayer = ({
       // Update optimistically - show where we're seeking to
       setCurrentTime(seekTime);
       
+      // Prevent src from changing during download
+      const originalSrc = audio.src;
+      if (originalSrc) {
+        currentAudioSrcRef.current = originalSrc;
+        
+        const checkSrc = () => {
+          if (audio.src !== originalSrc && isDownloadingRef.current) {
+            // Restore src if it was changed during download
+            audio.src = originalSrc;
+          }
+        };
+        
+        // Check src periodically to prevent changes
+        const srcCheckInterval = setInterval(() => {
+          if (!isDownloadingRef.current) {
+            clearInterval(srcCheckInterval);
+            return;
+          }
+          checkSrc();
+        }, 100);
+        
+        // Clear interval when download completes
+        audio.addEventListener('canplaythrough', () => {
+          clearInterval(srcCheckInterval);
+        }, { once: true });
+      }
+      
       // If audio is loaded, seek immediately
       if (audio.readyState > 0) {
         audio.currentTime = seekTime;
         
-        // Wait for buffer to download (5-10 MB) before playing
+        // Wait for buffer to download (10 MB minimum, or entire file if < 20 MB) before playing
         waitForBuffer(audio, seekTime).then(() => {
+          // Mark download as complete
+          isDownloadingRef.current = false;
+          
           // Buffer is ready, now play automatically if we're supposed to play
           if (isPlaying && audio.paused) {
             audio.play().then(() => {
@@ -1263,6 +1382,7 @@ const MusicPlayer = ({
           }
         }).catch((err) => {
           console.error('Buffer wait error after seek:', err);
+          isDownloadingRef.current = false;
           setIsLoading(false);
           setIsBuffering(false);
         });
@@ -1272,8 +1392,11 @@ const MusicPlayer = ({
           audio.removeEventListener('loadedmetadata', handleCanSeek);
           audio.currentTime = seekTime;
           
-          // Wait for buffer to download (5-10 MB) before playing
+          // Wait for buffer to download (10 MB minimum, or entire file if < 20 MB) before playing
           waitForBuffer(audio, seekTime).then(() => {
+            // Mark download as complete
+            isDownloadingRef.current = false;
+            
             // Buffer is ready, now play automatically if we're supposed to play
             if (isPlaying && audio.paused) {
               audio.play().then(() => {
@@ -1290,6 +1413,7 @@ const MusicPlayer = ({
             }
           }).catch((err) => {
             console.error('Buffer wait error after seek:', err);
+            isDownloadingRef.current = false;
             setIsLoading(false);
             setIsBuffering(false);
           });
