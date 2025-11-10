@@ -511,7 +511,8 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
       mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.BUFFERED;
 
       const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
-      request.autoplay = true;
+      // Don't autoplay immediately - wait for buffer to download first
+      request.autoplay = false;
       // Use startTime parameter (0 for new media, or seek time for seeking)
       request.currentTime = startTime;
 
@@ -531,8 +532,23 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         updateState({
           mediaSession,
           currentMedia: { url, title, contentType },
-          isPlaying: true,
+          isPlaying: false, // Start as paused, will play after buffer
         });
+        
+        // Wait for buffer to download (5-10 MB) before playing
+        // Estimate: ~3-5 seconds for 5-10 MB at typical bitrate
+        setTimeout(async () => {
+          try {
+            if (mediaSession && (mediaSession.playerState === 'IDLE' || mediaSession.playerState === 'PAUSED')) {
+              await mediaSession.play();
+              updateState({
+                isPlaying: true,
+              });
+            }
+          } catch (error) {
+            // Silent fail - will retry
+          }
+        }, 5000); // Wait 5 seconds for buffer to download (5-10 MB)
       } else {
         // If no media session returned, try to get it from session
         const existingMediaSession = session.getMediaSession();
@@ -541,8 +557,22 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           updateState({
             mediaSession: existingMediaSession,
             currentMedia: { url, title, contentType },
-            isPlaying: true,
+            isPlaying: false, // Start as paused, will play after buffer
           });
+          
+          // Wait for buffer to download (5-10 MB) before playing
+          setTimeout(async () => {
+            try {
+              if (existingMediaSession && (existingMediaSession.playerState === 'IDLE' || existingMediaSession.playerState === 'PAUSED')) {
+                await existingMediaSession.play();
+                updateState({
+                  isPlaying: true,
+                });
+              }
+            } catch (error) {
+              // Silent fail
+            }
+          }, 5000); // Wait 5 seconds for buffer to download (5-10 MB)
         }
       }
 

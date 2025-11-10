@@ -151,6 +151,84 @@ const MusicPlayer = ({
   // Track loading state to prevent multiple loads
   const loadingSongRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Helper function to wait for buffer to download (5-10 MB minimum)
+  const waitForBuffer = async (audio: HTMLAudioElement, startTime: number = 0): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      // Minimum buffer size: 10 MB (10 * 1024 * 1024 bytes)
+      // For audio, estimate ~1 MB per minute (128 kbps MP3)
+      // So 10 MB ≈ 10 minutes of audio
+      const MIN_BUFFER_SIZE_MB = 10;
+      const MIN_BUFFER_SIZE_BYTES = MIN_BUFFER_SIZE_MB * 1024 * 1024;
+      
+      // Timeout after 30 seconds (fallback)
+      const timeout = setTimeout(() => {
+        audio.removeEventListener('progress', checkBuffer);
+        audio.removeEventListener('canplay', checkBuffer);
+        audio.removeEventListener('canplaythrough', checkBuffer);
+        audio.removeEventListener('loadeddata', checkBuffer);
+        resolve();
+      }, 30000);
+      
+      const checkBuffer = () => {
+        try {
+          // Check if we have enough buffered data
+          const buffered = audio.buffered;
+          let totalBuffered = 0;
+          let hasBufferAtPosition = false;
+          
+          for (let i = 0; i < buffered.length; i++) {
+            const start = buffered.start(i);
+            const end = buffered.end(i);
+            const range = end - start;
+            totalBuffered += range;
+            
+            // Check if startTime is within buffered range
+            if (startTime >= start - 0.5 && startTime <= end + 0.5) {
+              hasBufferAtPosition = true;
+            }
+          }
+          
+          // Estimate bytes buffered (rough estimate: 1 MB per minute for 128 kbps MP3)
+          // More accurate: use duration and bitrate if available
+          const estimatedBytesPerSecond = 16000; // ~128 kbps = 16 KB/s
+          const estimatedBufferedBytes = totalBuffered * estimatedBytesPerSecond;
+          
+          // Check if we have enough buffer AND the position is buffered
+          const hasEnoughBuffer = estimatedBufferedBytes >= MIN_BUFFER_SIZE_BYTES;
+          const readyStateGood = audio.readyState >= 3; // HAVE_FUTURE_DATA
+          
+          if (hasEnoughBuffer && hasBufferAtPosition && readyStateGood) {
+            clearTimeout(timeout);
+            audio.removeEventListener('progress', checkBuffer);
+            audio.removeEventListener('canplay', checkBuffer);
+            audio.removeEventListener('canplaythrough', checkBuffer);
+            audio.removeEventListener('loadeddata', checkBuffer);
+            resolve();
+          }
+        } catch (error) {
+          // If error checking buffer, continue anyway
+          clearTimeout(timeout);
+          audio.removeEventListener('progress', checkBuffer);
+          audio.removeEventListener('canplay', checkBuffer);
+          audio.removeEventListener('canplaythrough', checkBuffer);
+          audio.removeEventListener('loadeddata', checkBuffer);
+          resolve();
+        }
+      };
+      
+      // Check immediately if already buffered
+      if (audio.readyState >= 3) {
+        checkBuffer();
+      }
+      
+      // Listen for buffer events
+      audio.addEventListener('progress', checkBuffer);
+      audio.addEventListener('canplay', checkBuffer);
+      audio.addEventListener('canplaythrough', checkBuffer);
+      audio.addEventListener('loadeddata', checkBuffer);
+    });
+  };
 
   // Load song and set up audio element with optimized streaming
   useEffect(() => {
@@ -410,6 +488,16 @@ const MusicPlayer = ({
     if (isPlaying && isNewSongOrNotLoaded) {
       if (!abortController.signal.aborted) {
         audio.load();
+        
+        // Wait for buffer to download before playing
+        waitForBuffer(audio, 0).then(() => {
+          if (!abortController.signal.aborted && isPlaying && audio.paused) {
+            // Buffer is ready, now play
+            audio.play().catch((err) => {
+              console.error('Play error after buffer:', err);
+            });
+          }
+        });
       }
     }
     
@@ -502,40 +590,31 @@ const MusicPlayer = ({
         }
       }
       
-      // If audio is already loaded and paused, try to play immediately (resume)
+      // If audio is already loaded and paused, wait for buffer before playing (resume)
       if (audio.readyState >= 2 && audio.paused) {
-        // Audio is already loaded - restore position FIRST, then play
+        // Audio is already loaded - restore position FIRST, then wait for buffer, then play
         if (savedPosition) {
           const position = parseFloat(savedPosition);
           if (!isNaN(position) && position > 0) {
-            console.log(`Resuming from saved position: ${position} seconds`);
             // Set position immediately if duration is available
             if (audio.duration > 0 && position < audio.duration) {
-              // Set position multiple times to ensure it sticks
+              // Set position
               audio.currentTime = position;
               setCurrentTime(position);
-              // Verify position was set
-              setTimeout(() => {
-                if (Math.abs(audio.currentTime - position) > 1) {
-                  // Position wasn't set correctly, try again
-                  console.log(`Position not set correctly, retrying. Current: ${audio.currentTime}, Target: ${position}`);
-                  audio.currentTime = position;
-                  setCurrentTime(position);
-                }
-                // Use a longer delay to ensure position is set before playing
-                setTimeout(() => {
-                  console.log(`Playing from position: ${audio.currentTime}`);
-                  audio.play().then(() => {
-                    setIsLoading(false);
-                  }).catch(err => {
-                    console.error('Play error:', err);
-                    setIsLoading(false);
-                  });
-                }, 100);
-              }, 50);
+              
+              // Wait for buffer to download before playing
+              waitForBuffer(audio, position).then(() => {
+                // Buffer is ready, now play
+                audio.play().then(() => {
+                  setIsLoading(false);
+                }).catch(err => {
+                  console.error('Play error:', err);
+                  setIsLoading(false);
+                });
+              });
               return; // Don't continue
             } else {
-              // Wait for duration to load, then set position and play
+              // Wait for duration to load, then set position, wait for buffer, then play
               const handleDurationLoad = () => {
                 if (audio.duration > 0 && position < audio.duration) {
                   audio.currentTime = position;
@@ -919,48 +998,8 @@ const MusicPlayer = ({
           // Set currentTime to seek position to start buffering
           audio.currentTime = seekTime;
           
-          // Wait for the audio to buffer the new position (same as loading new song)
-          await new Promise<void>((resolve) => {
-            const timeout = setTimeout(() => {
-              // Timeout - continue anyway (Chromecast will buffer)
-              resolve();
-            }, 2000);
-            
-            const checkBuffer = () => {
-              // Check if we have enough buffer at the seek position
-              const buffered = audio.buffered;
-              let hasBuffer = false;
-              
-              for (let i = 0; i < buffered.length; i++) {
-                const start = buffered.start(i);
-                const end = buffered.end(i);
-                // Check if seek position is within buffered range
-                if (seekTime >= start - 0.5 && seekTime <= end + 0.5) {
-                  hasBuffer = true;
-                  break;
-                }
-              }
-              
-              // Also check if readyState is good enough
-              if (hasBuffer && audio.readyState >= 2) {
-                clearTimeout(timeout);
-                audio.removeEventListener('progress', checkBuffer);
-                audio.removeEventListener('canplay', checkBuffer);
-                audio.removeEventListener('canplaythrough', checkBuffer);
-                resolve();
-              }
-            };
-            
-            // Check immediately
-            if (audio.readyState >= 2) {
-              checkBuffer();
-            }
-            
-            // Listen for buffer events
-            audio.addEventListener('progress', checkBuffer);
-            audio.addEventListener('canplay', checkBuffer);
-            audio.addEventListener('canplaythrough', checkBuffer);
-          });
+          // Wait for the audio to buffer the new position (5-10 MB minimum)
+          await waitForBuffer(audio, seekTime);
           
           // Now reload media with new currentTime (exactly like loading new song)
           // This ensures the new part is downloaded and autoplay works
