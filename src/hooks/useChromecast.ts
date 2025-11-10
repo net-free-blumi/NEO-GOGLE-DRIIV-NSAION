@@ -839,7 +839,23 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
         }
       }
       
-      // Method 3: session.setVolume (standard method - try fire-and-forget first, like useExternalSpeaker.ts)
+      // Method 3: Try session.setReceiverVolumeLevel if available (newer API)
+      if (typeof session.setReceiverVolumeLevel === 'function') {
+        try {
+          const vol = new (window as any).chrome.cast.Volume();
+          vol.level = volLevel;
+          vol.muted = stateRef.current.isMuted;
+          
+          // Try fire-and-forget first
+          session.setReceiverVolumeLevel(vol);
+          updateState({ volume, session });
+          return true;
+        } catch (e) {
+          console.log('⚠️ setReceiverVolumeLevel not available, trying other methods');
+        }
+      }
+      
+      // Method 4: session.setVolume (standard method - try fire-and-forget first, like useExternalSpeaker.ts)
       // This is how other apps do it - fire-and-forget without callbacks
       if (typeof session.setVolume === 'function') {
         const vol = new (window as any).chrome.cast.Volume();

@@ -6,6 +6,7 @@ import { Song } from "@/pages/Index";
 import { useExternalSpeaker } from "@/hooks/useExternalSpeaker";
 import { useChromecastContext } from "@/contexts/ChromecastContext";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 
 interface MusicPlayerProps {
   song: Song;
@@ -38,6 +39,9 @@ const MusicPlayer = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Toast for notifications
+  const { toast } = useToast();
   
   // Get speakers list from sessionStorage
   const [speakers] = useState(() => {
@@ -151,29 +155,71 @@ const MusicPlayer = ({
         const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
         if (GOOGLE_CLIENT_ID && (window as any).google?.accounts?.oauth2) {
           // Use a promise to wait for token refresh
-          await new Promise<void>((resolve) => {
-            const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-              client_id: GOOGLE_CLIENT_ID,
-              scope: 'https://www.googleapis.com/auth/drive.readonly',
-              prompt: '', // Use cached consent
-              callback: (resp: any) => {
-                if (resp.access_token) {
-                  const expiresIn = resp.expires_in || 3600;
-                  const newExpiresAt = Date.now() + (expiresIn - 60) * 1000;
-                  sessionStorage.setItem('gd_access_token', resp.access_token);
-                  sessionStorage.setItem('gd_token_expires_at', newExpiresAt.toString());
-                  accessToken = resp.access_token;
-                  console.log('Token refreshed successfully');
-                } else if (resp.error) {
-                  console.error('Token refresh error:', resp.error);
-                }
-                resolve();
-              },
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/drive.readonly',
+                prompt: '', // Use cached consent
+                callback: (resp: any) => {
+                  if (resp.access_token) {
+                    const expiresIn = resp.expires_in || 3600;
+                    const newExpiresAt = Date.now() + (expiresIn - 60) * 1000;
+                    sessionStorage.setItem('gd_access_token', resp.access_token);
+                    sessionStorage.setItem('gd_token_expires_at', newExpiresAt.toString());
+                    accessToken = resp.access_token;
+                    console.log('Token refreshed successfully');
+                    resolve();
+                  } else if (resp.error) {
+                    console.error('Token refresh error:', resp.error);
+                    // Show toast notification for disconnection
+                    if (resp.error === 'popup_blocked' || resp.error === 'popup_closed_by_user') {
+                      toast({
+                        title: 'התנתקות מ-Google Drive',
+                        description: 'לא הצלחנו לרענן את החיבור. נא להתחבר מחדש.',
+                        variant: 'destructive',
+                        duration: 5000,
+                      });
+                    } else {
+                      toast({
+                        title: 'התנתקות מ-Google Drive',
+                        description: 'החיבור ל-Google Drive פג. נא להתחבר מחדש.',
+                        variant: 'destructive',
+                        duration: 5000,
+                      });
+                    }
+                    // Clear invalid token
+                    sessionStorage.removeItem('gd_access_token');
+                    sessionStorage.removeItem('gd_token_expires_at');
+                    sessionStorage.removeItem('gd_is_authenticated');
+                    accessToken = null;
+                    reject(new Error(resp.error));
+                  } else {
+                    resolve();
+                  }
+                },
+              });
+              tokenClient.requestAccessToken({ prompt: '' });
             });
-            tokenClient.requestAccessToken({ prompt: '' });
-          });
+          } catch (error) {
+            console.error('Token refresh failed:', error);
+            toast({
+              title: 'התנתקות מ-Google Drive',
+              description: 'החיבור ל-Google Drive פג. נא להתחבר מחדש.',
+              variant: 'destructive',
+              duration: 5000,
+            });
+            accessToken = null;
+          }
         } else {
           console.warn('Cannot refresh token: Google OAuth not available');
+          toast({
+            title: 'התנתקות מ-Google Drive',
+            description: 'לא ניתן לרענן את החיבור. נא להתחבר מחדש.',
+            variant: 'destructive',
+            duration: 5000,
+          });
+          accessToken = null;
         }
       }
       
@@ -205,8 +251,15 @@ const MusicPlayer = ({
       
       // Refresh token if needed and build URL
       refreshTokenIfNeeded().then((accessToken) => {
-    let finalUrl = song.url;
-    if (isNetlify && accessToken) {
+        if (!accessToken) {
+          // Token refresh failed - stop loading
+          setIsLoading(false);
+          setIsBuffering(false);
+          return;
+        }
+        
+        let finalUrl = song.url;
+        if (isNetlify && accessToken) {
           // Check if URL already has query parameters
           const separator = song.url.includes('?') ? '&' : '?';
           finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
@@ -224,6 +277,10 @@ const MusicPlayer = ({
           audio.preload = 'none'; // Don't preload - stream on demand
           audio.src = finalUrl;
         }
+      }).catch((error) => {
+        console.error('Error refreshing token:', error);
+        setIsLoading(false);
+        setIsBuffering(false);
       });
     }
     
@@ -259,12 +316,39 @@ const MusicPlayer = ({
     // Set up streaming optimization
     audio.setAttribute('preload', 'none');
     
+    // Add error handler for audio loading errors
+    const handleAudioError = (e: any) => {
+      console.error('Audio loading error:', e);
+      setIsLoading(false);
+      setIsBuffering(false);
+      
+      // Check if it's an authentication error (401/403)
+      const target = e.target as HTMLAudioElement;
+      if (target.error) {
+        const errorCode = target.error.code;
+        if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || errorCode === MediaError.MEDIA_ERR_NETWORK) {
+          toast({
+            title: 'שגיאה בטעינת השיר',
+            description: 'לא הצלחנו לטעון את השיר. נא לבדוק את החיבור ל-Google Drive.',
+            variant: 'destructive',
+            duration: 5000,
+          });
+        }
+      }
+    };
+    
+    audio.addEventListener('error', handleAudioError);
+    
     // Only load when user wants to play AND it's a new song (not resuming)
     // Don't call load() when resuming - it resets the position to 0!
     if (isPlaying && isNewSongOrNotLoaded) {
-    audio.load();
+      audio.load();
     }
-  }, [song.id, song.url, isPlaying]);
+    
+    return () => {
+      audio.removeEventListener('error', handleAudioError);
+    };
+  }, [song.id, song.url, isPlaying, toast]);
 
   // Stop local audio when external speaker is active
   useEffect(() => {
