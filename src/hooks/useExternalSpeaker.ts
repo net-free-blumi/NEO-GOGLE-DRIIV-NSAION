@@ -205,7 +205,7 @@ export const useExternalSpeaker = (selectedSpeaker: string | null, speakers: any
   // Stop local audio when external speaker is active
   const stopLocalAudio = () => {
     const audio = audioRef.current || document.querySelector('audio') as HTMLAudioElement;
-    if (audio && isExternalSpeakerActive()) {
+    if (audio && isExternalSpeakerActive) {
       audio.pause();
       audio.currentTime = 0;
     }

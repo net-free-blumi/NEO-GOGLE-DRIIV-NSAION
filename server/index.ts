@@ -196,7 +196,7 @@ const getControlURL = async (deviceDescriptionUrl: string, serviceType: string):
     clearTimeout(timeout);
     
     // Find the control URL for the service type
-    const serviceRegex = new RegExp(`<serviceType>${serviceType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\/serviceType>[\\s\\S]*?<controlURL>(.*?)<\/controlURL>`, 'i');
+    const serviceRegex = new RegExp(`<serviceType>${serviceType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</serviceType>[\\s\\S]*?<controlURL>(.*?)</controlURL>`, 'i');
     const match = xml.match(serviceRegex);
     
     if (match && match[1]) {

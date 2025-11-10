@@ -6,7 +6,7 @@ interface ChromecastContextType {
   discoverDevices: () => Promise<ChromecastDevice[]>;
   connect: () => Promise<boolean>;
   disconnect: () => Promise<void>;
-  loadMedia: (url: string, title: string, contentType?: string) => Promise<boolean>;
+  loadMedia: (url: string, title: string, contentType?: string, startTime?: number) => Promise<boolean>;
   play: () => Promise<boolean>;
   pause: () => Promise<boolean>;
   stop: () => Promise<boolean>;

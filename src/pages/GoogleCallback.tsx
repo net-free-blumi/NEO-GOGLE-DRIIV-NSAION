@@ -3,9 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
-const GDRIVE_FOLDER_ID = import.meta.env.VITE_GDRIVE_FOLDER_ID || "";
+const GOOGLE_CLIENT_ID = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || "");
+const REDIRECT_URI = String(import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`);
+const GDRIVE_FOLDER_ID = String(import.meta.env.VITE_GDRIVE_FOLDER_ID || "");
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 const LS = {

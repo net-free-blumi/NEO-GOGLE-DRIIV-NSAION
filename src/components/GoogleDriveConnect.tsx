@@ -8,9 +8,9 @@ interface GoogleDriveConnectProps {
   onSongsLoaded: (songs: Song[]) => void;
 }
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
-const GDRIVE_FOLDER_ID = import.meta.env.VITE_GDRIVE_FOLDER_ID || "";
+const GOOGLE_CLIENT_ID = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || "");
+const REDIRECT_URI = String(import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`);
+const GDRIVE_FOLDER_ID = String(import.meta.env.VITE_GDRIVE_FOLDER_ID || "");
 const SCOPES = [
   "openid",
   "email",
@@ -21,6 +21,7 @@ const SCOPES = [
 const LS = {
   accessToken: "gd_access_token",
   tokenExpiresAt: "gd_token_expires_at",
+  codeVerifier: "gd_code_verifier",
   songs: "gd_songs",
   userEmail: "gd_user_email",
   isAuthenticated: "gd_is_authenticated",
