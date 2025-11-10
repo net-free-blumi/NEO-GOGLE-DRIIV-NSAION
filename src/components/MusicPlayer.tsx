@@ -87,6 +87,8 @@ const MusicPlayer = ({
         lastLoadedSongRef.current = song.id;
         lastLoadedTimeRef.current = 0;
         isLoadingRef.current = true;
+        setIsLoading(true);
+        setIsBuffering(true);
         
         // Ensure local audio is stopped before loading to Chromecast
         if (audioRef.current) {
@@ -94,20 +96,77 @@ const MusicPlayer = ({
           audioRef.current.currentTime = 0;
         }
         
-        chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', 0)
-          .then(() => {
+        // Step 1: Download song locally first (buffer)
+        const loadAndCast = async () => {
+          try {
+            const audio = audioRef.current;
+            if (!audio) {
             isLoadingRef.current = false;
-            // Ensure local audio is still stopped after loading
-            if (audioRef.current) {
-              audioRef.current.pause();
-              audioRef.current.currentTime = 0;
+              setIsLoading(false);
+              setIsBuffering(false);
+              return;
             }
-          })
-          .catch(() => {
+            
+            // Get token for Netlify functions
+            const accessToken = sessionStorage.getItem('gd_access_token');
+            let finalUrl = song.url;
+            const isNetlify = song.url.includes('.netlify.app') || song.url.includes('netlify/functions');
+            
+            if (isNetlify && accessToken) {
+              const separator = song.url.includes('?') ? '&' : '?';
+              finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+            } else if (!isNetlify && accessToken && !song.url.includes('token=')) {
+              const separator = song.url.includes('?') ? '&' : '?';
+              finalUrl = `${song.url}${separator}token=${encodeURIComponent(accessToken)}`;
+            }
+            
+            // Set audio source and start downloading
+            if (audio.src !== finalUrl) {
+              audio.preload = 'auto';
+              audio.src = finalUrl;
+            }
+            
+            // Wait for buffer to download (10 MB minimum, or entire file if < 20 MB)
+            await waitForBuffer(audio, 0);
+            
+            // Step 2: Verify stable connection to Chromecast
+            if (!chromecast.state.isConnected) {
+              const connected = await chromecast.connect();
+              if (!connected) {
             isLoadingRef.current = false;
+                setIsLoading(false);
+                setIsBuffering(false);
+                return;
+              }
+            }
+            
+            // Step 3: Now load media to Chromecast (after local buffer is ready)
+            await chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', 0);
+            
+            // Step 4: Wait a bit for Chromecast to buffer, then play
+            setTimeout(async () => {
+              try {
+                await chromecast.play();
+                isLoadingRef.current = false;
+                setIsLoading(false);
+                setIsBuffering(false);
+              } catch (error) {
+                isLoadingRef.current = false;
+                setIsLoading(false);
+                setIsBuffering(false);
+              }
+            }, 3000); // Wait 3 seconds for Chromecast buffer
+            
+          } catch (error) {
+            isLoadingRef.current = false;
+            setIsLoading(false);
+            setIsBuffering(false);
             // Reset ref on error so we can retry
             lastLoadedSongRef.current = null;
-          });
+          }
+        };
+        
+        loadAndCast();
       }
     }
   }, [song.id, song.url, isChromecastActive, chromecast]);
@@ -784,19 +843,19 @@ const MusicPlayer = ({
               
               // Wait for buffer to download before playing
               waitForBuffer(audio, position).then(() => {
-              // Double check: make sure we're still supposed to play
+                // Double check: make sure we're still supposed to play
               // Also check that Chromecast is not active - don't play local audio if Chromecast is active
               if (isPlaying && audio.paused && !isChromecastActive && !isExternalSpeakerActive) {
-                // Buffer is ready, now play
-                audio.play().then(() => {
+                  // Buffer is ready, now play
+                  audio.play().then(() => {
+                    setIsLoading(false);
+                  }).catch(err => {
+                    console.error('Play error:', err);
+                    setIsLoading(false);
+                  });
+                } else {
                   setIsLoading(false);
-                }).catch(err => {
-                  console.error('Play error:', err);
-                  setIsLoading(false);
-                });
-              } else {
-                setIsLoading(false);
-              }
+                }
               }).catch((err) => {
                 console.error('Buffer wait error:', err);
                 setIsLoading(false);
@@ -862,7 +921,7 @@ const MusicPlayer = ({
           try {
             // Double check before playing
             if (!isChromecastActive && !isExternalSpeakerActive) {
-              await audio.play();
+            await audio.play();
             }
             setIsLoading(false);
           } catch (err) {
@@ -873,7 +932,7 @@ const MusicPlayer = ({
           try {
             // Double check before playing
             if (!isChromecastActive && !isExternalSpeakerActive) {
-              await audio.play();
+            await audio.play();
             }
             setIsLoading(false);
           } catch (err) {
@@ -893,17 +952,17 @@ const MusicPlayer = ({
             
             if (audio.readyState >= 3) { // Prefer HAVE_FUTURE_DATA
               if (!isChromecastActive && !isExternalSpeakerActive) {
-                audio.play().catch(err => {
-                  console.error('Play error:', err);
-                  setIsLoading(false);
-                });
+              audio.play().catch(err => {
+                console.error('Play error:', err);
+                setIsLoading(false);
+              });
               }
             } else if (audio.readyState >= 2) { // Accept HAVE_CURRENT_DATA
               if (!isChromecastActive && !isExternalSpeakerActive) {
-                audio.play().catch(err => {
-                  console.error('Play error:', err);
-                  setIsLoading(false);
-                });
+              audio.play().catch(err => {
+        console.error('Play error:', err);
+        setIsLoading(false);
+      });
               }
             } else if (retries < maxRetries) {
               retries++;
@@ -912,10 +971,10 @@ const MusicPlayer = ({
               // Force play even if not ready (browser will buffer)
               // But only if Chromecast/external speaker is not active
               if (!isChromecastActive && !isExternalSpeakerActive) {
-                audio.play().catch(err => {
-                  console.error('Play error after retries:', err);
-                  setIsLoading(false);
-                });
+              audio.play().catch(err => {
+                console.error('Play error after retries:', err);
+                setIsLoading(false);
+              });
               } else {
                 setIsLoading(false);
               }
@@ -1085,7 +1144,7 @@ const MusicPlayer = ({
         // Repeat current song
         audio.currentTime = 0;
         if (!isChromecastActive && !isExternalSpeakerActive) {
-          audio.play();
+        audio.play();
         }
       } else if (repeatMode === 'all') {
         // Continue to next song
@@ -1263,36 +1322,100 @@ const MusicPlayer = ({
           // Set currentTime to seek position to start buffering
           audio.currentTime = seekTime;
           
-          // Wait for the audio to buffer the new position (10 MB minimum, or entire file if < 20 MB)
+          // Step 1: Wait for the audio to buffer the new position (10 MB minimum, or entire file if < 20 MB)
           // This ensures we download the relevant part before playing
           await waitForBuffer(audio, seekTime);
           
           // Mark download as complete
           isDownloadingRef.current = false;
           
-          // Now reload media with new currentTime (exactly like loading new song)
-          // This ensures the new part is downloaded and autoplay works
+          // Step 2: Verify stable connection to Chromecast
+          if (!chromecast.state.isConnected) {
+            const connected = await chromecast.connect();
+            if (!connected) {
+              isLoadingRef.current = false;
+              setIsLoading(false);
+              setIsBuffering(false);
+              return;
+            }
+          }
+          
+          // Step 3: Now load media to Chromecast (after local buffer is ready)
           isLoadingRef.current = true;
           setIsLoading(true);
           setIsBuffering(false); // Buffer is ready, now loading to Chromecast
           
           await chromecast.loadMedia(song.url, song.name || song.title || 'Track', 'audio/mpeg', seekTime);
           
-          // Media is loaded, now wait a bit for Chromecast to buffer
-          // Then play automatically
-          setTimeout(async () => {
+          // Step 4: Wait for Chromecast to buffer and be ready, then play
+          // Poll for media to be ready before playing
+          let pollCount = 0;
+          const maxPolls = 20; // 10 seconds max wait (20 * 500ms)
+          const checkAndPlay = async () => {
+            try {
+              const mediaSession = chromecast.state.mediaSession;
+              if (!mediaSession) {
+                if (pollCount < maxPolls) {
+                  pollCount++;
+                  setTimeout(checkAndPlay, 500);
+                  return;
+                } else {
+                  // Timeout - try to play anyway
             try {
               await chromecast.play();
+                  } catch (error) {
+                    // Silent fail
+                  }
+                  isLoadingRef.current = false;
               setIsLoading(false);
               setIsBuffering(false);
+                  return;
+                }
+              }
+              
+              const PlayerState = (window as any).chrome?.cast?.media?.PlayerState;
+              const currentState = mediaSession.playerState;
+              
+              // Media is ready when it's IDLE or PAUSED (not BUFFERING)
+              if (currentState === PlayerState?.IDLE || currentState === PlayerState?.PAUSED) {
+                // Wait a bit more to ensure buffer is ready
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Final check before playing
+                if (mediaSession && (mediaSession.playerState === PlayerState?.IDLE || mediaSession.playerState === PlayerState?.PAUSED)) {
+                  await chromecast.play();
               isLoadingRef.current = false;
+                  setIsLoading(false);
+                  setIsBuffering(false);
+                } else {
+                  isLoadingRef.current = false;
+                  setIsLoading(false);
+                  setIsBuffering(false);
+                }
+              } else if (pollCount < maxPolls) {
+                // Still buffering, check again
+                pollCount++;
+                setTimeout(checkAndPlay, 500);
+              } else {
+                // Timeout - try to play anyway
+                try {
+                  await chromecast.play();
             } catch (error) {
-              // Silent fail - will retry
+                  // Silent fail
+                }
+                isLoadingRef.current = false;
               setIsLoading(false);
               setIsBuffering(false);
+              }
+            } catch (error) {
               isLoadingRef.current = false;
+              setIsLoading(false);
+              setIsBuffering(false);
             }
-          }, 2000); // Wait 2 seconds for Chromecast to buffer
+          };
+          
+          // Start checking after initial delay
+          setTimeout(checkAndPlay, 2000); // Wait 2 seconds before first check
           
         } catch (error) {
           // Mark download as complete even on error

@@ -584,20 +584,51 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
           isPlaying: false, // Start as paused, will play after buffer
         });
         
-        // Wait for buffer to download (5-10 MB) before playing
-        // Estimate: ~3-5 seconds for 5-10 MB at typical bitrate
-        setTimeout(async () => {
+        // Wait for media to be ready before playing
+        // Poll for playerState to ensure media is loaded and ready
+        let pollCount = 0;
+        const maxPolls = 30; // 15 seconds max wait (30 * 500ms)
+        const checkAndPlay = async () => {
           try {
-            if (mediaSession && (mediaSession.playerState === 'IDLE' || mediaSession.playerState === 'PAUSED')) {
+            const currentState = mediaSession.playerState;
+            const PlayerState = (window as any).chrome?.cast?.media?.PlayerState;
+            
+            // Media is ready when it's IDLE or PAUSED (not BUFFERING)
+            if (currentState === PlayerState?.IDLE || currentState === PlayerState?.PAUSED) {
+              // Additional check: wait a bit more to ensure buffer is ready
+              await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 more seconds for buffer
+              
+              // Final check before playing
+              if (mediaSession && (mediaSession.playerState === PlayerState?.IDLE || mediaSession.playerState === PlayerState?.PAUSED)) {
+                await mediaSession.play();
+                updateState({
+                  isPlaying: true,
+                });
+              }
+            } else if (pollCount < maxPolls) {
+              // Still buffering, check again
+              pollCount++;
+              setTimeout(checkAndPlay, 500); // Check every 500ms
+            } else {
+              // Timeout - try to play anyway
+              try {
+                if (mediaSession) {
               await mediaSession.play();
               updateState({
                 isPlaying: true,
               });
             }
           } catch (error) {
-            // Silent fail - will retry
+                // Silent fail
+              }
+            }
+          } catch (error) {
+            // Silent fail
           }
-        }, 5000); // Wait 5 seconds for buffer to download (5-10 MB)
+        };
+        
+        // Start checking after initial delay
+        setTimeout(checkAndPlay, 2000); // Wait 2 seconds before first check
       } else {
         // If no media session returned, try to get it from session
         const existingMediaSession = session.getMediaSession();
@@ -609,10 +640,29 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             isPlaying: false, // Start as paused, will play after buffer
           });
           
-          // Wait for buffer to download (5-10 MB) before playing
-          setTimeout(async () => {
+          // Wait for media to be ready before playing
+          let pollCount = 0;
+          const maxPolls = 30; // 15 seconds max wait
+          const checkAndPlay = async () => {
             try {
-              if (existingMediaSession && (existingMediaSession.playerState === 'IDLE' || existingMediaSession.playerState === 'PAUSED')) {
+              const currentState = existingMediaSession.playerState;
+              const PlayerState = (window as any).chrome?.cast?.media?.PlayerState;
+              
+              if (currentState === PlayerState?.IDLE || currentState === PlayerState?.PAUSED) {
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 more seconds for buffer
+                
+                if (existingMediaSession && (existingMediaSession.playerState === PlayerState?.IDLE || existingMediaSession.playerState === PlayerState?.PAUSED)) {
+                  await existingMediaSession.play();
+                  updateState({
+                    isPlaying: true,
+                  });
+                }
+              } else if (pollCount < maxPolls) {
+                pollCount++;
+                setTimeout(checkAndPlay, 500);
+              } else {
+                try {
+                  if (existingMediaSession) {
                 await existingMediaSession.play();
                 updateState({
                   isPlaying: true,
@@ -621,7 +671,13 @@ export const useChromecast = (options: UseChromecastOptions = {}) => {
             } catch (error) {
               // Silent fail
             }
-          }, 5000); // Wait 5 seconds for buffer to download (5-10 MB)
+              }
+            } catch (error) {
+              // Silent fail
+            }
+          };
+          
+          setTimeout(checkAndPlay, 2000);
         }
       }
 
