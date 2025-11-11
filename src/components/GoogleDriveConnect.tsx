@@ -334,9 +334,18 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
       coverUrl = folderImages.get(f.folderPath);
     }
     
+    // Clean title - remove [SPOTDOWNLOADER.COM] and similar tags
+    let cleanTitle = f.name;
+    // Remove [SPOTDOWNLOADER.COM] and variations (case insensitive)
+    cleanTitle = cleanTitle.replace(/\[SPOTDOWNLOADER\.COM\]/gi, '').trim();
+    cleanTitle = cleanTitle.replace(/\[spotdownloader\.com\]/gi, '').trim();
+    cleanTitle = cleanTitle.replace(/\[spotdownloader\]/gi, '').trim();
+    // Remove any extra spaces
+    cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
+    
     return {
       id: f.id,
-      title: f.name,
+      title: cleanTitle || f.name, // Fallback to original if cleaning results in empty string
       artist: '',
       duration: 0,
       url,

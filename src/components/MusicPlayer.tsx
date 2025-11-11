@@ -1643,25 +1643,27 @@ const MusicPlayer = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input field
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || 
-          target.tagName === 'TEXTAREA' || 
-          target.isContentEditable ||
-          target.closest('input') ||
-          target.closest('textarea')) {
-        return;
-      }
+      const isInput = target.tagName === 'INPUT' || 
+                      target.tagName === 'TEXTAREA' || 
+                      target.isContentEditable ||
+                      target.closest('input') ||
+                      target.closest('textarea') ||
+                      target.closest('[contenteditable="true"]');
       
       // Spacebar for play/pause
-      if (e.code === 'Space' || e.key === ' ') {
+      if ((e.code === 'Space' || e.key === ' ') && !isInput) {
         e.preventDefault(); // Prevent page scroll
+        e.stopPropagation(); // Stop event bubbling
         onPlayPause();
+        return false;
       }
     };
     
-    window.addEventListener('keydown', handleKeyDown);
+    // Use capture phase to catch the event early
+    document.addEventListener('keydown', handleKeyDown, true);
     
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
   }, [onPlayPause]);
   
@@ -1750,6 +1752,18 @@ const MusicPlayer = ({
                     src={song.coverUrl}
                     alt={song.title}
                     className="w-full h-full rounded-lg object-cover"
+                    onError={(e) => {
+                      // If image fails to load, hide it and show emoji
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('span')) {
+                        const emoji = document.createElement('span');
+                        emoji.className = 'text-lg sm:text-xl md:text-2xl';
+                        emoji.textContent = '🎵';
+                        parent.appendChild(emoji);
+                      }
+                    }}
                   />
                 ) : (
                   <span className="text-lg sm:text-xl md:text-2xl">🎵</span>
@@ -1795,8 +1809,78 @@ const MusicPlayer = ({
               </div>
             </div>
 
-            {/* Controls */}
+            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
             <div className="flex items-center justify-center gap-1 sm:gap-2 flex-shrink-0">
+              {/* כפתור שיר קודם - משמאל */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onPrevious}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onPrevious();
+                }}
+                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
+                title="שיר קודם"
+              >
+                <SkipBack className="w-5 h-5" />
+              </Button>
+              
+              {/* כפתור עצירה - באמצע */}
+              {onStop && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onStop}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onStop();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
+                  title="עצור"
+                >
+                  <Square className="w-4 h-4 sm:w-5 sm:h-5" />
+                </Button>
+              )}
+              
+              {/* כפתור נגינה/השהה - באמצע */}
+              <Button
+                variant="default"
+                size="icon"
+                onClick={onPlayPause}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onPlayPause();
+                }}
+                className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-95 transition-all shadow-[var(--shadow-player)] touch-manipulation"
+                disabled={isLoading && !isPlaying}
+                title={isPlaying ? "השהה" : "נגן"}
+              >
+                {(isLoading && !isPlaying) ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : isPlaying ? (
+                  <Pause className="w-6 h-6" fill="currentColor" />
+                ) : (
+                  <Play className="w-6 h-6" fill="currentColor" />
+                )}
+              </Button>
+              
+              {/* כפתור שיר הבא - מימין */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onNext}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  onNext();
+                }}
+                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
+                title="שיר הבא"
+              >
+                <SkipForward className="w-5 h-5" />
+              </Button>
+              
+              {/* כפתור מרובה - אחרי הכפתורים */}
               {onRepeatModeChange && (
                 <Button
                   variant="ghost"
@@ -1831,64 +1915,6 @@ const MusicPlayer = ({
                   )}
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onPrevious}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  onPrevious();
-                }}
-                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-              >
-                <SkipBack className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="default"
-                size="icon"
-                onClick={onPlayPause}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  onPlayPause();
-                }}
-                className="w-16 h-16 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-90 transition-all shadow-[var(--shadow-player)] touch-manipulation"
-                disabled={isLoading && !isPlaying}
-              >
-                {(isLoading && !isPlaying) ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : isPlaying ? (
-                  <Pause className="w-6 h-6" fill="currentColor" />
-                ) : (
-                  <Play className="w-6 h-6" fill="currentColor" />
-                )}
-              </Button>
-              {onStop && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onStop}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onStop();
-                  }}
-                  className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-                  title="עצירה לגמרי"
-                >
-                  <Square className="w-5 h-5" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onNext}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  onNext();
-                }}
-                className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-              >
-                <SkipForward className="w-5 h-5" />
-              </Button>
             </div>
 
             {/* Volume Control */}
@@ -1961,6 +1987,18 @@ const MusicPlayer = ({
                   src={song.coverUrl}
                   alt={song.title}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // If image fails to load, hide it and show emoji
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('span')) {
+                      const emoji = document.createElement('span');
+                      emoji.className = 'text-8xl md:text-9xl';
+                      emoji.textContent = '🎵';
+                      parent.appendChild(emoji);
+                    }
+                  }}
                 />
               ) : (
                 <span className="text-8xl md:text-9xl">🎵</span>
@@ -2031,10 +2069,80 @@ const MusicPlayer = ({
               )}
             </div>
 
-            {/* Controls */}
+            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
             <div className="flex flex-col items-center gap-6 w-full">
               {/* Main Controls */}
               <div className="flex items-center gap-4 md:gap-6">
+                {/* כפתור שיר קודם - משמאל */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onPrevious}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onPrevious();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
+                  title="שיר קודם"
+                >
+                  <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+                </Button>
+                
+                {/* כפתור עצירה - באמצע */}
+                {onStop && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onStop}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      onStop();
+                    }}
+                    className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
+                    title="עצור"
+                  >
+                    <Square className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+                  </Button>
+                )}
+                
+                {/* כפתור נגינה/השהה - באמצע */}
+                <Button
+                  variant="default"
+                  size="icon"
+                  onClick={onPlayPause}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onPlayPause();
+                  }}
+                  className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-95 transition-all shadow-[var(--shadow-player)] touch-manipulation"
+                  disabled={isLoading && !isPlaying}
+                  title={isPlaying ? "השהה" : "נגן"}
+                >
+                  {(isLoading && !isPlaying) ? (
+                    <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 animate-spin" />
+                  ) : isPlaying ? (
+                    <Pause className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
+                  ) : (
+                    <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
+                  )}
+                </Button>
+                
+                {/* כפתור שיר הבא - מימין */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onNext}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onNext();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
+                  title="שיר הבא"
+                >
+                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+                </Button>
+                
+                {/* כפתור מרובה - אחרי הכפתורים */}
                 {onRepeatModeChange && (
                   <Button
                     variant="ghost"
@@ -2069,64 +2177,6 @@ const MusicPlayer = ({
                     )}
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onPrevious}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onPrevious();
-                  }}
-                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
-                >
-                  <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
-                </Button>
-                <Button
-                  variant="default"
-                  size="icon"
-                  onClick={onPlayPause}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onPlayPause();
-                  }}
-                  className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-primary to-accent hover:scale-105 active:scale-95 transition-all shadow-[var(--shadow-player)] touch-manipulation"
-                  disabled={isLoading && !isPlaying}
-                >
-                  {(isLoading && !isPlaying) ? (
-                    <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 animate-spin" />
-                  ) : isPlaying ? (
-                    <Pause className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
-                  ) : (
-                    <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
-                  )}
-                </Button>
-                {onStop && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onStop}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      onStop();
-                    }}
-                    className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
-                    title="עצירה לגמרי"
-                  >
-                    <Square className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onNext}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onNext();
-                  }}
-                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
-                >
-                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
-                </Button>
               </div>
 
               {/* Volume Control */}
