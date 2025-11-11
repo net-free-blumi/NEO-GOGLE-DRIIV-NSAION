@@ -21,6 +21,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Cling UPnP library repository
+        maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
     }
 }
 

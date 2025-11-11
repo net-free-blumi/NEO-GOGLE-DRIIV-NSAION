@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Radio, Check, Loader2, RefreshCw, Cast, Airplay, Bluetooth, Wifi, WifiOff } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import UPnPDiscovery, { UPnPDevice } from "@/plugins/UPnPDiscovery";
+import ChromecastNative from "@/plugins/ChromecastNative";
 
 // Extend Navigator interface for Bluetooth
 interface BluetoothDevice {
@@ -363,87 +366,117 @@ const UnifiedSpeakerSelector = ({
   };
 
   // DLNA/UPnP Discovery - כמו BubbleUPnP
-  // עובד גם ב-Netlify דרך WebRTC discovery או Netlify Functions
+  // ב-Android: משתמש ב-native UPnP plugin
+  // ב-Web: משתמש ב-backend service או Netlify Functions
   const discoverDLNASpeakers = async (): Promise<Speaker[]> => {
     const dlnaSpeakers: Speaker[] = [];
     
     try {
-      // Check if we're in local development (has local server)
-      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      
-      if (isLocalDev) {
-        // Try to discover via local backend service
-        const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
-      
-      try {
-        const response = await fetch(discoveryUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(6000),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.speakers && Array.isArray(data.speakers)) {
-            dlnaSpeakers.push(...data.speakers.map((s: any) => ({
-                id: s.id || `dlna-${s.name || s.address}`,
-                name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
+      // Check if we're on Android (native platform)
+      if (Capacitor.isNativePlatform()) {
+        try {
+          // Use native UPnP plugin
+          await UPnPDiscovery.startDiscovery();
+          
+          // Wait a bit for devices to be discovered
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Get discovered devices
+          const result = await UPnPDiscovery.getDiscoveredDevices();
+          
+          if (result.devices && result.devices.length > 0) {
+            dlnaSpeakers.push(...result.devices.map((device: UPnPDevice) => ({
+              id: device.id,
+              name: device.friendlyName || device.name,
               type: 'DLNA' as const,
-              url: s.url,
-                friendlyName: s.friendlyName || s.name,
-                address: s.address,
+              url: device.url,
+              friendlyName: device.friendlyName || device.name,
             })));
-            }
           }
-        } catch (fetchError: any) {
-          // If backend service is not available, log but don't fail
-          if (fetchError.name !== 'AbortError') {
-            console.log('DLNA discovery service not available - make sure to run: npm run dev:all');
-          }
+          
+          // Listen for new devices
+          UPnPDiscovery.addListener('deviceDiscovered', (device: UPnPDevice) => {
+            setSpeakers(prev => {
+              const exists = prev.some(s => s.id === device.id);
+              if (!exists) {
+                return [...prev, {
+                  id: device.id,
+                  name: device.friendlyName || device.name,
+                  type: 'DLNA' as const,
+                  url: device.url,
+                  friendlyName: device.friendlyName || device.name,
+                }];
+              }
+              return prev;
+            });
+          });
+        } catch (error: any) {
+          console.warn('Native UPnP discovery failed:', error);
         }
       } else {
-        // In production (Netlify), try to discover via Netlify Functions
-        // We'll use WebRTC discovery or a free external service
-        try {
-          // Try Netlify Functions first
-          const netlifyUrl = '/.netlify/functions/discover-speakers?type=dlna';
-          const response = await fetch(netlifyUrl, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(8000),
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.speakers && Array.isArray(data.speakers)) {
-              dlnaSpeakers.push(...data.speakers.map((s: any) => ({
-                id: s.id || `dlna-${s.name || s.address}`,
-                name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
-                type: 'DLNA' as const,
-                url: s.url,
-                friendlyName: s.friendlyName || s.name,
-                address: s.address,
-              })));
+        // Web platform - use existing logic
+        // Check if we're in local development (has local server)
+        const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        if (isLocalDev) {
+          // Try to discover via local backend service
+          const discoveryUrl = `http://${window.location.hostname}:3001/api/discover-speakers?type=dlna`;
+        
+          try {
+            const response = await fetch(discoveryUrl, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              signal: AbortSignal.timeout(6000),
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.speakers && Array.isArray(data.speakers)) {
+                dlnaSpeakers.push(...data.speakers.map((s: any) => ({
+                  id: s.id || `dlna-${s.name || s.address}`,
+                  name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
+                  type: 'DLNA' as const,
+                  url: s.url,
+                  friendlyName: s.friendlyName || s.name,
+                  address: s.address,
+                })));
+              }
+            }
+          } catch (fetchError: any) {
+            // If backend service is not available, log but don't fail
+            if (fetchError.name !== 'AbortError') {
+              console.log('DLNA discovery service not available - make sure to run: npm run dev:all');
             }
           }
-        } catch (netlifyError: any) {
-          // If Netlify Functions fails, try WebRTC discovery
-          if (netlifyError.name !== 'AbortError') {
-            console.log('Netlify Functions not available, trying WebRTC discovery...');
-            try {
-              // WebRTC discovery - try to discover devices via WebRTC
-              // This is a fallback method that might work in some cases
-              const webrtcDevices = await discoverViaWebRTC();
-              dlnaSpeakers.push(...webrtcDevices);
-            } catch (webrtcError) {
-              console.log('WebRTC discovery also failed:', webrtcError);
+        } else {
+          // In production (Netlify), try to discover via Netlify Functions
+          try {
+            const netlifyUrl = '/.netlify/functions/discover-speakers?type=dlna';
+            const response = await fetch(netlifyUrl, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              signal: AbortSignal.timeout(6000),
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.speakers && Array.isArray(data.speakers)) {
+                dlnaSpeakers.push(...data.speakers.map((s: any) => ({
+                  id: s.id || `dlna-${s.name || s.address}`,
+                  name: s.name || s.friendlyName || `DLNA Device (${s.address})`,
+                  type: 'DLNA' as const,
+                  url: s.url,
+                  friendlyName: s.friendlyName || s.name,
+                })));
+              }
             }
+          } catch (fetchError: any) {
+            // Silent fail for Netlify Functions
           }
         }
       }
-      
-    } catch (e) {
-      console.log('DLNA discovery error:', e);
+    } catch (error: any) {
+      console.warn('DLNA discovery error:', error);
     }
     
     return dlnaSpeakers;
@@ -667,19 +700,61 @@ const UnifiedSpeakerSelector = ({
 
   const castToChromecast = async () => {
     try {
-      // Connect to Chromecast if not already connected
-      if (!chromecast.state.isConnected) {
-        const connected = await chromecast.connect();
-        if (!connected) {
+      // Check if we're on Android (native platform)
+      if (Capacitor.isNativePlatform()) {
+        // Use native Chromecast plugin
+        const initResult = await ChromecastNative.initialize();
+        if (!initResult.available) {
+          throw new Error("Chromecast לא זמין");
+        }
+
+        // Start session (will show device picker)
+        await ChromecastNative.startSession();
+
+        // Wait for session to start
+        let sessionStarted = false;
+        const sessionListener = await ChromecastNative.addListener('sessionStarted', () => {
+          sessionStarted = true;
+        });
+
+        // Wait up to 10 seconds for session to start
+        for (let i = 0; i < 20; i++) {
+          const state = await ChromecastNative.getSessionState();
+          if (state.connected) {
+            sessionStarted = true;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        if (!sessionStarted) {
           throw new Error("לא ניתן להתחבר ל-Chromecast");
         }
-      }
 
-      // Load media if URL provided
-      if (mediaUrl) {
-        const loaded = await chromecast.loadMedia(mediaUrl, title, contentType);
-        if (!loaded) {
-          throw new Error("לא ניתן לשדר ל-Chromecast");
+        // Load media if URL provided
+        if (mediaUrl) {
+          await ChromecastNative.loadMedia({
+            contentUrl: mediaUrl,
+            contentType: contentType,
+            title: title || 'Track',
+            imageUrl: '', // Can be added later
+          });
+        }
+      } else {
+        // Web platform - use existing Chromecast hook
+        if (!chromecast.state.isConnected) {
+          const connected = await chromecast.connect();
+          if (!connected) {
+            throw new Error("לא ניתן להתחבר ל-Chromecast");
+          }
+        }
+
+        // Load media if URL provided
+        if (mediaUrl) {
+          const loaded = await chromecast.loadMedia(mediaUrl, title, contentType);
+          if (!loaded) {
+            throw new Error("לא ניתן לשדר ל-Chromecast");
+          }
         }
       }
     } catch (e: any) {

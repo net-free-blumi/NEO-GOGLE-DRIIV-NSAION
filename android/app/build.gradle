@@ -40,6 +40,20 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    
+    // Google Cast SDK (Chromecast) - חינמי
+    implementation 'com.google.android.gms:play-services-cast-framework:21.5.0'
+    
+    // UPnP/DLNA Discovery - Cling library (חינמי)
+    implementation 'org.fourthline.cling:cling-core:2.1.2'
+    implementation 'org.fourthline.cling:cling-support:2.1.2'
+    
+    // Media Session for background playback
+    implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.media3:media3-session:1.2.0'
+    
+    // Network discovery support
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
 }
 
 apply from: 'capacitor.build.gradle'
