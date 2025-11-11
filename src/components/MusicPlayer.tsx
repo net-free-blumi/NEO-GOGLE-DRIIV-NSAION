@@ -1809,6 +1809,23 @@ const MusicPlayer = ({
               </div>
             </div>
 
+
+              {/* כפתור עצירה - באמצע */}
+              {onStop && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onStop}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onStop();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
+                  title="עצור"
+                >
+                  <Square className="w-4 h-4 sm:w-5 sm:h-5" />
+                </Button>
+              )}
             {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
             <div className="flex items-center justify-center gap-1 sm:gap-2 flex-shrink-0">
               {/* כפתור שיר קודם - משמאל */}
@@ -1826,22 +1843,6 @@ const MusicPlayer = ({
                 <SkipBack className="w-5 h-5" />
               </Button>
               
-              {/* כפתור עצירה - באמצע */}
-              {onStop && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onStop}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onStop();
-                  }}
-                  className="w-9 h-9 sm:w-10 sm:h-10 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-                  title="עצור"
-                >
-                  <Square className="w-4 h-4 sm:w-5 sm:h-5" />
-                </Button>
-              )}
               
               {/* כפתור נגינה/השהה - באמצע */}
               <Button

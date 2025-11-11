@@ -63,6 +63,58 @@ app.get("/api/stream/:id", async (req, res) => {
   }
 });
 
+// Thumbnail proxy endpoint - bypasses CORS for Google Drive thumbnails
+app.get("/api/thumbnail/:id", async (req, res) => {
+  try {
+    const fileId = req.params.id;
+    const authHeader = req.headers.authorization;
+    const tokenFromQuery = (req.query.token as string | undefined) || undefined;
+    const bearer = authHeader?.startsWith("Bearer ")
+      ? authHeader
+      : tokenFromQuery
+      ? `Bearer ${tokenFromQuery}`
+      : undefined;
+
+    if (!bearer) {
+      res.status(401).json({ error: "Missing access token" });
+      return;
+    }
+
+    const size = (req.query.sz as string) || "800";
+    
+    // Try to get thumbnail from Google Drive API
+    const thumbnailUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/thumbnail?sz=${size}`;
+    
+    const headers: Record<string, string> = { Authorization: bearer };
+    
+    const thumbnailRes = await fetch(thumbnailUrl, { headers });
+
+    if (!thumbnailRes.ok) {
+      res.status(thumbnailRes.status).json({ error: "Thumbnail not found" });
+      return;
+    }
+
+    // Get content type
+    const contentType = thumbnailRes.headers.get("content-type") || "image/jpeg";
+    
+    // Set response headers
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour
+
+    // Stream the image
+    if ((thumbnailRes as any).body) {
+      (thumbnailRes.body as any).pipe(res);
+    } else {
+      const buffer = await thumbnailRes.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    }
+  } catch (err) {
+    console.error("Thumbnail proxy error", err);
+    res.status(500).json({ error: "Thumbnail proxy failed" });
+  }
+});
+
 // UPnP/DLNA Discovery using SSDP (Simple Service Discovery Protocol)
 const discoverUPnPDevices = async (): Promise<any[]> => {
   const devices: any[] = [];

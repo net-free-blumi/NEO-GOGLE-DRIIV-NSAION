@@ -45,6 +45,11 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
   const proxyBase = isNetlify
     ? `${window.location.origin}/.netlify/functions/stream`
     : `http://${window.location.hostname}:3001/api/stream`;
+  
+  // Thumbnail proxy base URL
+  const thumbnailProxyBase = isNetlify
+    ? `${window.location.origin}/.netlify/functions/thumbnail`
+    : `http://${window.location.hostname}:3001/api/thumbnail`;
 
   const audioExtensions = [
     '.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.opus', '.wma', '.aiff'
@@ -272,9 +277,33 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
           }
         }
         
-        // No thumbnail found in metadata
-        // Note: We don't try to access thumbnail endpoint directly due to CORS restrictions
-        // thumbnailLink from metadata is the only reliable way to get thumbnails from browser
+        // Method 2: Try thumbnail endpoint via proxy (bypasses CORS)
+        // Google Drive API thumbnail endpoint: /files/{fileId}/thumbnail?sz={size}
+        // We'll use our proxy to access it
+        try {
+          const proxyThumbnailUrl = isNetlify
+            ? `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`
+            : `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`;
+          
+          const thumbnailTestResponse = await fetch(proxyThumbnailUrl, {
+            method: 'HEAD', // Just check if it exists
+          });
+          
+          if (thumbnailTestResponse.ok && thumbnailTestResponse.status === 200) {
+            // Thumbnail exists via proxy
+            const finalThumbnailUrl = isNetlify
+              ? `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`
+              : `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`;
+            
+            fileThumbnails.set(f.id, finalThumbnailUrl);
+            console.log(`✓ Found thumbnail (via proxy) for: ${f.name}`);
+            return; // Success, exit early
+          }
+        } catch (e) {
+          // Silent fail - continue to next method
+        }
+        
+        // No thumbnail found
         console.log(`✗ No thumbnail found for: ${f.name}`);
       } catch (e) {
         // Silent fail - will use folder image or default
