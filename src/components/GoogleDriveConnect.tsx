@@ -257,14 +257,14 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
           // Check if file has thumbnail (embedded album art)
           // Google Drive extracts embedded album art from audio files automatically
           if (fileInfo.thumbnailLink) {
-            // Use thumbnailLink with size parameter for better quality
-            // s220 = 220px, s320 = 320px, s640 = 640px, s800 = 800px
+            // thumbnailLink from Google Drive API might not include access token
+            // We'll add it when using the URL in the song object
+            // Store the base thumbnailLink for now
             let thumbnailUrl = fileInfo.thumbnailLink;
             
-            // Add size parameter if not present
-            if (!thumbnailUrl.includes('=')) {
-              thumbnailUrl = `${thumbnailUrl}=s800`; // Default to 800px for high quality
-            }
+            // thumbnailLink format: https://lh3.googleusercontent.com/...
+            // It may or may not include access_token parameter
+            // We'll ensure access token is added when constructing the final URL
             
             fileThumbnails.set(f.id, thumbnailUrl);
             console.log(`✓ Found thumbnail for: ${f.name}`);
@@ -272,34 +272,9 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
           }
         }
         
-        // Method 2: Try using the thumbnail endpoint directly with different sizes
-        // Google Drive API thumbnail endpoint: /files/{fileId}/thumbnail?sz={size}
-        // Size can be: 220, 320, 640, 800, 1000, 1200, 1600, 2000
-        const thumbnailSizes = [800, 640, 320, 220, 1000, 1200];
-        for (const size of thumbnailSizes) {
-          try {
-            const thumbnailEndpoint = `https://www.googleapis.com/drive/v3/files/${f.id}/thumbnail?sz=${size}`;
-            const thumbnailResponse = await fetch(thumbnailEndpoint, { 
-              headers,
-              method: 'GET' // Try to actually get the image
-            });
-            
-            // Check if we got an image (status 200 and content-type is image)
-            if (thumbnailResponse.ok && 
-                thumbnailResponse.status === 200 &&
-                thumbnailResponse.headers.get('content-type')?.startsWith('image/')) {
-              // Thumbnail exists, construct the URL
-              const thumbnailUrl = `https://www.googleapis.com/drive/v3/files/${f.id}/thumbnail?sz=${size}`;
-              fileThumbnails.set(f.id, thumbnailUrl);
-              console.log(`✓ Found thumbnail (size ${size}) for: ${f.name}`);
-              return; // Success, exit early
-            }
-          } catch (e) {
-            // Continue to next size
-          }
-        }
-        
-        // No thumbnail found
+        // No thumbnail found in metadata
+        // Note: We don't try to access thumbnail endpoint directly due to CORS restrictions
+        // thumbnailLink from metadata is the only reliable way to get thumbnails from browser
         console.log(`✗ No thumbnail found for: ${f.name}`);
       } catch (e) {
         // Silent fail - will use folder image or default
@@ -333,10 +308,25 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
     let coverUrl: string | undefined = undefined;
     
     // First, try to get embedded thumbnail from the file itself
+    // thumbnailLink needs access token to work properly
     if (f.thumbnailLink) {
-      coverUrl = f.thumbnailLink;
+      let thumbnailUrl = f.thumbnailLink;
+      // Add access token if not present (thumbnailLink from metadata might not include it)
+      if (!thumbnailUrl.includes('access_token=') && !thumbnailUrl.includes('authuser=')) {
+        const separator = thumbnailUrl.includes('?') ? '&' : '?';
+        thumbnailUrl = `${thumbnailUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
+      }
+      coverUrl = thumbnailUrl;
     } else if (fileThumbnails.has(f.id)) {
-      coverUrl = fileThumbnails.get(f.id);
+      let cachedThumbnail = fileThumbnails.get(f.id);
+      if (cachedThumbnail) {
+        // Add access token if not present
+        if (!cachedThumbnail.includes('access_token=') && !cachedThumbnail.includes('authuser=')) {
+          const separator = cachedThumbnail.includes('?') ? '&' : '?';
+          cachedThumbnail = `${cachedThumbnail}${separator}access_token=${encodeURIComponent(accessToken)}`;
+        }
+        coverUrl = cachedThumbnail;
+      }
     }
     
     // If no embedded thumbnail, try folder image
