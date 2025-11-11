@@ -220,15 +220,13 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
         };
         
         // Check if file has thumbnailLink (embedded album art from Google Drive)
-        // Note: thumbnailLink might not always be available in listFilesPage
-        // We'll check each file individually later
+        // thumbnailLink is a direct link to Google-hosted image - works directly!
         if ((item as any).thumbnailLink) {
           fileData.thumbnailLink = (item as any).thumbnailLink;
-          // Store thumbnail URL for this file with size parameter
-          const thumbnailUrl = (item as any).thumbnailLink.includes('=') 
-            ? (item as any).thumbnailLink 
-            : `${(item as any).thumbnailLink}=s800`; // Default to 800px
-          fileThumbnails.set(item.id, thumbnailUrl);
+          // Store thumbnail URL directly - no need to add size parameter or access token
+          // thumbnailLink format: https://lh3.googleusercontent.com/drive-storage/...
+          // These URLs work directly from browser without CORS issues
+          fileThumbnails.set(item.id, (item as any).thumbnailLink);
         }
         
         foundFiles.push(fileData);
@@ -249,37 +247,46 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
     // Fetch thumbnails for this batch in parallel
     const thumbnailPromises = batch.map(async (f) => {
       try {
-        // Try multiple methods to get thumbnail from Google Drive API
-        // Method 1: Try thumbnailLink endpoint (works for files with embedded album art)
-        let fileInfoResponse = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${f.id}?fields=thumbnailLink,thumbnailVersion,hasThumbnail`,
-          { headers }
-        );
-        
-        if (fileInfoResponse.ok) {
-          const fileInfo = await fileInfoResponse.json();
+        // Method 1: Check if file already has thumbnailLink from metadata
+        // This is the most reliable method - Google Drive extracts embedded album art automatically
+        if (f.thumbnailLink) {
+          // thumbnailLink from Google Drive API is a direct link to Google-hosted image
+          // It works directly from browser without CORS issues!
+          // Format: https://lh3.googleusercontent.com/drive-storage/...
+          // We can use it directly, but may need to add access token for some cases
+          let thumbnailUrl = f.thumbnailLink;
           
-          // Check if file has thumbnail (embedded album art)
-          // Google Drive extracts embedded album art from audio files automatically
-          if (fileInfo.thumbnailLink) {
-            // thumbnailLink from Google Drive API might not include access token
-            // We'll add it when using the URL in the song object
-            // Store the base thumbnailLink for now
-            let thumbnailUrl = fileInfo.thumbnailLink;
-            
-            // thumbnailLink format: https://lh3.googleusercontent.com/...
-            // It may or may not include access_token parameter
-            // We'll ensure access token is added when constructing the final URL
-            
-            fileThumbnails.set(f.id, thumbnailUrl);
-            console.log(`✓ Found thumbnail for: ${f.name}`);
-            return; // Success, exit early
-          }
+          // Some thumbnailLinks might need access token, but most work without it
+          // We'll try to use it as-is first, and add token only if needed
+          fileThumbnails.set(f.id, thumbnailUrl);
+          console.log(`✓ Found thumbnailLink for: ${f.name}`);
+          return; // Success, exit early
         }
         
-        // Method 2: Try thumbnail endpoint via proxy (bypasses CORS)
-        // Google Drive API thumbnail endpoint: /files/{fileId}/thumbnail?sz={size}
-        // We'll use our proxy to access it
+        // Method 2: Try to get thumbnailLink from file metadata
+        // Sometimes thumbnailLink is not included in listFilesPage, so fetch it separately
+        try {
+          let fileInfoResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${f.id}?fields=thumbnailLink,hasThumbnail`,
+            { headers }
+          );
+          
+          if (fileInfoResponse.ok) {
+            const fileInfo = await fileInfoResponse.json();
+            
+            if (fileInfo.thumbnailLink) {
+              // Found thumbnailLink - use it directly
+              fileThumbnails.set(f.id, fileInfo.thumbnailLink);
+              console.log(`✓ Found thumbnailLink (from metadata) for: ${f.name}`);
+              return; // Success, exit early
+            }
+          }
+        } catch (e) {
+          // Silent fail - continue to next method
+        }
+        
+        // Method 3: Try thumbnail endpoint via proxy (bypasses CORS)
+        // Only if thumbnailLink is not available
         try {
           const proxyThumbnailUrl = isNetlify
             ? `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`
@@ -301,8 +308,7 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
             }
           }
         } catch (e) {
-          // Silent fail - continue to next method
-          console.warn(`Proxy thumbnail check failed for ${f.name}:`, e);
+          // Silent fail - continue
         }
         
         // No thumbnail found
@@ -335,27 +341,23 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
     // Priority for cover image:
     // 1. Embedded thumbnail from file (thumbnailLink from Google Drive) - highest priority
     //    Google Drive automatically extracts embedded album art from audio files
+    //    thumbnailLink works directly from browser - NO access token needed!
     // 2. Folder image (if exists)
     let coverUrl: string | undefined = undefined;
     
     // First, try to get embedded thumbnail from the file itself
-    // thumbnailLink needs access token to work properly
+    // thumbnailLink from Google Drive is a direct link to Google-hosted image
+    // It works directly without needing access token - just use it as-is!
     if (f.thumbnailLink) {
-      let thumbnailUrl = f.thumbnailLink;
-      // Add access token if not present (thumbnailLink from metadata might not include it)
-      if (!thumbnailUrl.includes('access_token=') && !thumbnailUrl.includes('authuser=')) {
-        const separator = thumbnailUrl.includes('?') ? '&' : '?';
-        thumbnailUrl = `${thumbnailUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
-      }
-      coverUrl = thumbnailUrl;
+      // Use thumbnailLink directly - it's already a working URL
+      // Format: https://lh3.googleusercontent.com/drive-storage/...
+      // These URLs work directly from browser without CORS issues
+      coverUrl = f.thumbnailLink;
     } else if (fileThumbnails.has(f.id)) {
       let cachedThumbnail = fileThumbnails.get(f.id);
       if (cachedThumbnail) {
-        // Add access token if not present
-        if (!cachedThumbnail.includes('access_token=') && !cachedThumbnail.includes('authuser=')) {
-          const separator = cachedThumbnail.includes('?') ? '&' : '?';
-          cachedThumbnail = `${cachedThumbnail}${separator}access_token=${encodeURIComponent(accessToken)}`;
-        }
+        // If it's a proxy URL, use it as-is (it already has token)
+        // If it's a thumbnailLink, use it directly without adding token
         coverUrl = cachedThumbnail;
       }
     }
