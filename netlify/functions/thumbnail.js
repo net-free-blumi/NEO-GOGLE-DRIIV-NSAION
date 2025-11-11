@@ -16,13 +16,22 @@ exports.handler = async (event) => {
     }
 
     // Extract file ID from path
-    let fileId = event.path.split('/thumbnail/')[1];
+    // Netlify Functions: event.path is like "/.netlify/functions/thumbnail/{fileId}"
+    // or "/thumbnail/{fileId}" depending on routing
+    let fileId = event.path;
     
-    if (!fileId) {
-      const pathParts = event.path.split('/').filter(p => p && p !== 'thumbnail' && p !== '.netlify' && p !== 'functions');
+    // Remove leading slashes and function name
+    if (fileId.includes('/thumbnail/')) {
+      fileId = fileId.split('/thumbnail/')[1];
+    } else if (fileId.startsWith('/thumbnail')) {
+      fileId = fileId.replace('/thumbnail', '').replace(/^\//, '');
+    } else {
+      // Try to get from path parts
+      const pathParts = fileId.split('/').filter(p => p && p !== 'thumbnail' && p !== '.netlify' && p !== 'functions' && p !== '');
       fileId = pathParts[pathParts.length - 1];
     }
     
+    // Remove query string if present
     if (fileId) {
       fileId = fileId.split('?')[0];
     }
@@ -57,7 +66,41 @@ exports.handler = async (event) => {
     // Get size parameter (default to 800)
     const size = event.queryStringParameters?.sz || '800';
 
-    // Build Google Drive thumbnail URL
+    // First, try to get thumbnailLink from file metadata
+    try {
+      const fileInfoUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=thumbnailLink,hasThumbnail`;
+      const fileInfoRes = await fetch(fileInfoUrl, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      
+      if (fileInfoRes.ok) {
+        const fileInfo = await fileInfoRes.json();
+        if (fileInfo.thumbnailLink) {
+          // Use thumbnailLink directly (it's a Google-hosted image URL)
+          const thumbnailLinkRes = await fetch(fileInfo.thumbnailLink);
+          if (thumbnailLinkRes.ok) {
+            const arrayBuffer = await thumbnailLinkRes.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString('base64');
+            const contentType = thumbnailLinkRes.headers.get('content-type') || 'image/jpeg';
+            
+            return {
+              statusCode: 200,
+              body: base64,
+              isBase64Encoded: true,
+              headers: {
+                'Content-Type': contentType,
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=3600',
+              },
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // Fall through to thumbnail endpoint
+    }
+
+    // Fallback: Try thumbnail endpoint
     const thumbnailUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/thumbnail?sz=${size}`;
     
     const fetchHeaders = {
@@ -67,9 +110,10 @@ exports.handler = async (event) => {
     const thumbnailRes = await fetch(thumbnailUrl, { headers: fetchHeaders });
 
     if (!thumbnailRes.ok) {
+      // Return 404 if thumbnail doesn't exist
       return {
-        statusCode: thumbnailRes.status,
-        body: JSON.stringify({ error: 'Thumbnail not found' }),
+        statusCode: 404,
+        body: JSON.stringify({ error: 'Thumbnail not found', status: thumbnailRes.status }),
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',

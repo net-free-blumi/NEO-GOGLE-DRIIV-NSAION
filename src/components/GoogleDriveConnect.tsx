@@ -285,22 +285,24 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
             ? `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`
             : `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`;
           
+          // Use GET to fetch the thumbnail
           const thumbnailTestResponse = await fetch(proxyThumbnailUrl, {
-            method: 'HEAD', // Just check if it exists
+            method: 'GET',
           });
           
           if (thumbnailTestResponse.ok && thumbnailTestResponse.status === 200) {
-            // Thumbnail exists via proxy
-            const finalThumbnailUrl = isNetlify
-              ? `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`
-              : `${thumbnailProxyBase}/${f.id}?token=${encodeURIComponent(accessToken)}&sz=800`;
-            
-            fileThumbnails.set(f.id, finalThumbnailUrl);
-            console.log(`✓ Found thumbnail (via proxy) for: ${f.name}`);
-            return; // Success, exit early
+            // Check if we got an image (not JSON error)
+            const contentType = thumbnailTestResponse.headers.get('content-type');
+            if (contentType && contentType.startsWith('image/')) {
+              // Thumbnail exists via proxy - store the proxy URL
+              fileThumbnails.set(f.id, proxyThumbnailUrl);
+              console.log(`✓ Found thumbnail (via proxy) for: ${f.name}`);
+              return; // Success, exit early
+            }
           }
         } catch (e) {
           // Silent fail - continue to next method
+          console.warn(`Proxy thumbnail check failed for ${f.name}:`, e);
         }
         
         // No thumbnail found
