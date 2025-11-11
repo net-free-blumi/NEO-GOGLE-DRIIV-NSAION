@@ -67,6 +67,9 @@ const MusicPlayer = ({
   // Check if Chromecast is the selected speaker
   const selectedSpeakerData = speakers.find((s: any) => s.id === selectedSpeaker);
   const isChromecastActive = selectedSpeakerData?.type === 'Chromecast' && chromecast.state.isConnected;
+  
+  // Ref to prevent keyboard event conflicts (e.g., when typing in input fields)
+  const isInputFocusedRef = useRef(false);
 
   // Load song to Chromecast if connected
   // Use ref to prevent multiple loads of the same song
@@ -1156,10 +1159,32 @@ const MusicPlayer = ({
     };
 
     audio.addEventListener('ended', handleEnded);
+    
+    // Sync audio play/pause state with React state
+    // This handles cases where audio is controlled externally (e.g., media keys, other tabs)
+    const handleAudioPlay = () => {
+      if (!isPlaying && !isChromecastActive && !isExternalSpeakerActive) {
+        // Audio started playing externally, sync state
+        onPlayPause();
+      }
+    };
+    
+    const handleAudioPause = () => {
+      if (isPlaying && !isChromecastActive && !isExternalSpeakerActive) {
+        // Audio paused externally, sync state
+        onPlayPause();
+      }
+    };
+    
+    audio.addEventListener('play', handleAudioPlay);
+    audio.addEventListener('pause', handleAudioPause);
+    
     return () => {
       audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('play', handleAudioPlay);
+      audio.removeEventListener('pause', handleAudioPause);
     };
-  }, [repeatMode, onNext]);
+  }, [repeatMode, onNext, isPlaying, isChromecastActive, isExternalSpeakerActive, onPlayPause]);
 
   // Debounce volume changes to avoid too many calls
   const volumeDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -1612,6 +1637,48 @@ const MusicPlayer = ({
           });
         };
         audio.addEventListener('loadedmetadata', handleCanSeek);
+  
+  // Keyboard shortcuts: Spacebar for play/pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || 
+          target.tagName === 'TEXTAREA' || 
+          target.isContentEditable ||
+          target.closest('input') ||
+          target.closest('textarea')) {
+        return;
+      }
+      
+      // Spacebar for play/pause
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault(); // Prevent page scroll
+        onPlayPause();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onPlayPause]);
+  
+  // Sync with Chromecast state changes (when Chromecast is controlled externally)
+  useEffect(() => {
+    if (isChromecastActive && chromecast.state.isPlaying !== undefined) {
+      // If Chromecast playing state doesn't match our state, sync it
+      if (chromecast.state.isPlaying !== isPlaying) {
+        // This will trigger play/pause in the parent component
+        if (chromecast.state.isPlaying && !isPlaying) {
+          onPlayPause(); // Play
+        } else if (!chromecast.state.isPlaying && isPlaying) {
+          onPlayPause(); // Pause
+        }
+      }
+    }
+  }, [isChromecastActive, chromecast.state.isPlaying, isPlaying, onPlayPause]);
       }
     }
   };

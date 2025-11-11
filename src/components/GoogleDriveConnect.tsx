@@ -215,10 +215,15 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
         };
         
         // Check if file has thumbnailLink (embedded album art from Google Drive)
+        // Note: thumbnailLink might not always be available in listFilesPage
+        // We'll check each file individually later
         if ((item as any).thumbnailLink) {
           fileData.thumbnailLink = (item as any).thumbnailLink;
-          // Store thumbnail URL for this file
-          fileThumbnails.set(item.id, (item as any).thumbnailLink);
+          // Store thumbnail URL for this file with size parameter
+          const thumbnailUrl = (item as any).thumbnailLink.includes('=') 
+            ? (item as any).thumbnailLink 
+            : `${(item as any).thumbnailLink}=s800`; // Default to 800px
+          fileThumbnails.set(item.id, thumbnailUrl);
         }
         
         foundFiles.push(fileData);
@@ -226,30 +231,92 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
     }
   }
 
-  // First, try to get thumbnails for files that don't have them yet
-  // Batch process files without thumbnails (limit to avoid too many requests)
-  const filesWithoutThumbnails = foundFiles.filter(f => !f.thumbnailLink && !fileThumbnails.has(f.id)).slice(0, 50); // Limit to 50 to avoid rate limits
+  // Get thumbnails for ALL audio files (Google Drive extracts embedded album art)
+  // Process in batches to avoid rate limits
+  const BATCH_SIZE = 20; // Process 20 files at a time
+  const allFiles = foundFiles.filter(f => !fileThumbnails.has(f.id));
   
-  // Fetch thumbnails in parallel (but limit concurrency)
-  const thumbnailPromises = filesWithoutThumbnails.map(async (f) => {
-    try {
-      const fileInfoResponse = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${f.id}?fields=thumbnailLink`,
-        { headers }
-      );
-      if (fileInfoResponse.ok) {
-        const fileInfo = await fileInfoResponse.json();
-        if (fileInfo.thumbnailLink) {
-          fileThumbnails.set(f.id, fileInfo.thumbnailLink);
+  console.log(`Checking thumbnails for ${allFiles.length} audio files...`);
+  
+  for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+    const batch = allFiles.slice(i, i + BATCH_SIZE);
+    
+    // Fetch thumbnails for this batch in parallel
+    const thumbnailPromises = batch.map(async (f) => {
+      try {
+        // Try multiple methods to get thumbnail from Google Drive API
+        // Method 1: Try thumbnailLink endpoint (works for files with embedded album art)
+        let fileInfoResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${f.id}?fields=thumbnailLink,thumbnailVersion,hasThumbnail`,
+          { headers }
+        );
+        
+        if (fileInfoResponse.ok) {
+          const fileInfo = await fileInfoResponse.json();
+          
+          // Check if file has thumbnail (embedded album art)
+          // Google Drive extracts embedded album art from audio files automatically
+          if (fileInfo.thumbnailLink) {
+            // Use thumbnailLink with size parameter for better quality
+            // s220 = 220px, s320 = 320px, s640 = 640px, s800 = 800px
+            let thumbnailUrl = fileInfo.thumbnailLink;
+            
+            // Add size parameter if not present
+            if (!thumbnailUrl.includes('=')) {
+              thumbnailUrl = `${thumbnailUrl}=s800`; // Default to 800px for high quality
+            }
+            
+            fileThumbnails.set(f.id, thumbnailUrl);
+            console.log(`✓ Found thumbnail for: ${f.name}`);
+            return; // Success, exit early
+          }
         }
+        
+        // Method 2: Try using the thumbnail endpoint directly with different sizes
+        // Google Drive API thumbnail endpoint: /files/{fileId}/thumbnail?sz={size}
+        // Size can be: 220, 320, 640, 800, 1000, 1200, 1600, 2000
+        const thumbnailSizes = [800, 640, 320, 220, 1000, 1200];
+        for (const size of thumbnailSizes) {
+          try {
+            const thumbnailEndpoint = `https://www.googleapis.com/drive/v3/files/${f.id}/thumbnail?sz=${size}`;
+            const thumbnailResponse = await fetch(thumbnailEndpoint, { 
+              headers,
+              method: 'GET' // Try to actually get the image
+            });
+            
+            // Check if we got an image (status 200 and content-type is image)
+            if (thumbnailResponse.ok && 
+                thumbnailResponse.status === 200 &&
+                thumbnailResponse.headers.get('content-type')?.startsWith('image/')) {
+              // Thumbnail exists, construct the URL
+              const thumbnailUrl = `https://www.googleapis.com/drive/v3/files/${f.id}/thumbnail?sz=${size}`;
+              fileThumbnails.set(f.id, thumbnailUrl);
+              console.log(`✓ Found thumbnail (size ${size}) for: ${f.name}`);
+              return; // Success, exit early
+            }
+          } catch (e) {
+            // Continue to next size
+          }
+        }
+        
+        // No thumbnail found
+        console.log(`✗ No thumbnail found for: ${f.name}`);
+      } catch (e) {
+        // Silent fail - will use folder image or default
+        console.warn(`Error getting thumbnail for file ${f.id} (${f.name}):`, e);
       }
-    } catch (e) {
-      // Silent fail - will use folder image or default
+    });
+    
+    // Wait for this batch to complete before starting next batch
+    await Promise.allSettled(thumbnailPromises);
+    
+    // Small delay between batches to avoid rate limits
+    if (i + BATCH_SIZE < allFiles.length) {
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
     }
-  });
+  }
   
-  // Wait for all thumbnail requests to complete (with timeout)
-  await Promise.allSettled(thumbnailPromises);
+  console.log(`Found ${fileThumbnails.size} thumbnails out of ${foundFiles.length} files`);
 
   // Map to Song objects
   const songs: Song[] = foundFiles.map((f) => {
