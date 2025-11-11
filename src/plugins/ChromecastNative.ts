@@ -5,8 +5,27 @@ export interface ChromecastSessionState {
   sessionId?: string;
 }
 
+export interface ChromecastDevice {
+  id: string;
+  name: string;
+  modelName?: string;
+}
+
+export interface ChromecastMediaStatus {
+  isPlaying: boolean;
+  isPaused: boolean;
+  isBuffering: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  muted: boolean;
+  title?: string;
+  subtitle?: string;
+}
+
 export interface ChromecastNativePlugin {
   initialize(): Promise<{ success: boolean; available: boolean }>;
+  discoverDevices(): Promise<{ devices: ChromecastDevice[] }>;
   startSession(options?: { deviceId?: string }): Promise<{ success: boolean; message: string }>;
   endSession(): Promise<{ success: boolean }>;
   loadMedia(options: {
@@ -20,6 +39,9 @@ export interface ChromecastNativePlugin {
   pause(): Promise<{ success: boolean }>;
   stop(): Promise<{ success: boolean }>;
   seek(options: { position: number }): Promise<{ success: boolean }>;
+  setVolume(options: { volume: number }): Promise<{ success: boolean; volume: number }>;
+  getVolume(): Promise<{ volume: number; muted: boolean }>;
+  getMediaStatus(): Promise<ChromecastMediaStatus>;
   getSessionState(): Promise<ChromecastSessionState>;
   addListener(
     eventName: 'sessionStarted' | 'sessionEnded' | 'sessionStartFailed',

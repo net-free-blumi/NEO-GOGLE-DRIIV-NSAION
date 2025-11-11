@@ -14,6 +14,18 @@ export class UPnPDiscoveryWeb {
     return { devices: [] };
   }
 
+  async playMedia(): Promise<{ success: boolean }> {
+    return { success: false };
+  }
+
+  async setVolume(): Promise<{ success: boolean; volume: number }> {
+    return { success: false, volume: 0 };
+  }
+
+  async getVolume(): Promise<{ volume: number; muted: boolean }> {
+    return { volume: 0, muted: false };
+  }
+
   async addListener(): Promise<{ remove: () => void }> {
     return { remove: () => {} };
   }

@@ -13,6 +13,11 @@ export interface UPnPDiscoveryPlugin {
   startDiscovery(): Promise<{ success: boolean; message: string }>;
   stopDiscovery(): Promise<{ success: boolean; message: string }>;
   getDiscoveredDevices(): Promise<{ devices: UPnPDevice[] }>;
+  playMedia(options: {
+    deviceId: string;
+    mediaUrl: string;
+    title?: string;
+  }): Promise<{ success: boolean }>;
   addListener(
     eventName: 'deviceDiscovered',
     listenerFunc: (device: UPnPDevice) => void

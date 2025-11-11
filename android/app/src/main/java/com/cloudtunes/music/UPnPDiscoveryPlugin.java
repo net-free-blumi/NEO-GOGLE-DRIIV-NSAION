@@ -28,10 +28,9 @@ import org.fourthline.cling.support.model.ProtocolInfo;
 import org.fourthline.cling.support.model.ProtocolInfos;
 import org.fourthline.cling.support.model.dlna.DLNAProfiles;
 import org.fourthline.cling.support.model.dlna.DLNAProtocolInfo;
-import org.fourthline.cling.support.model.dlna.DLNAProtocolInfos;
-
-import java.util.ArrayList;
-import java.util.List;
+import org.fourthline.cling.support.renderingcontrol.callback.SetVolume;
+import org.fourthline.cling.support.renderingcontrol.callback.GetVolume;
+import org.fourthline.cling.support.model.Channel;
 
 @CapacitorPlugin(name = "UPnPDiscovery")
 public class UPnPDiscoveryPlugin extends Plugin {
@@ -217,6 +216,109 @@ public class UPnPDiscoveryPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Error playing media", e);
             call.reject("Failed to play media: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void setVolume(PluginCall call) {
+        try {
+            String deviceId = call.getString("deviceId");
+            int volume = call.getInt("volume", 50); // 0-100
+            
+            if (deviceId == null) {
+                call.reject("Missing deviceId");
+                return;
+            }
+
+            RemoteDevice device = findDeviceById(deviceId);
+            if (device == null) {
+                call.reject("Device not found");
+                return;
+            }
+
+            // Find RenderingControl service
+            Service renderingControlService = device.findService(
+                org.fourthline.cling.model.types.ServiceType.valueOf("RenderingControl")
+            );
+
+            if (renderingControlService == null) {
+                call.reject("Device does not support volume control");
+                return;
+            }
+
+            // Set volume (0-100, convert to 0-1.0 for UPnP)
+            double volumeNormalized = Math.max(0.0, Math.min(1.0, volume / 100.0));
+            
+            ControlPoint controlPoint = upnpService.getControlPoint();
+            controlPoint.execute(new SetVolume(renderingControlService, volumeNormalized) {
+                @Override
+                public void success(ActionInvocation invocation) {
+                    Log.d(TAG, "Volume set successfully");
+                    JSObject result = new JSObject();
+                    result.put("success", true);
+                    result.put("volume", volume);
+                    call.resolve(result);
+                }
+
+                @Override
+                public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
+                    Log.e(TAG, "Set volume failed: " + defaultMsg);
+                    call.reject("Failed to set volume: " + defaultMsg);
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting volume", e);
+            call.reject("Failed to set volume: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getVolume(PluginCall call) {
+        try {
+            String deviceId = call.getString("deviceId");
+            
+            if (deviceId == null) {
+                call.reject("Missing deviceId");
+                return;
+            }
+
+            RemoteDevice device = findDeviceById(deviceId);
+            if (device == null) {
+                call.reject("Device not found");
+                return;
+            }
+
+            // Find RenderingControl service
+            Service renderingControlService = device.findService(
+                org.fourthline.cling.model.types.ServiceType.valueOf("RenderingControl")
+            );
+
+            if (renderingControlService == null) {
+                call.reject("Device does not support volume control");
+                return;
+            }
+
+            ControlPoint controlPoint = upnpService.getControlPoint();
+            controlPoint.execute(new GetVolume(renderingControlService) {
+                @Override
+                public void received(ActionInvocation invocation, double currentVolume) {
+                    // Convert from 0-1.0 to 0-100
+                    int volumePercent = (int) (currentVolume * 100);
+                    JSObject result = new JSObject();
+                    result.put("volume", volumePercent);
+                    result.put("muted", false); // UPnP doesn't always support mute
+                    call.resolve(result);
+                }
+
+                @Override
+                public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
+                    Log.e(TAG, "Get volume failed: " + defaultMsg);
+                    call.reject("Failed to get volume: " + defaultMsg);
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting volume", e);
+            call.reject("Failed to get volume: " + e.getMessage());
         }
     }
 

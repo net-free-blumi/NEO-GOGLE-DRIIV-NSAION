@@ -407,6 +407,102 @@ public class ChromecastNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setVolume(PluginCall call) {
+        try {
+            if (castSession == null || !castSession.isConnected()) {
+                call.reject("No active Cast session");
+                return;
+            }
+
+            double volume = call.getDouble("volume", 1.0);
+            volume = Math.max(0.0, Math.min(1.0, volume)); // Clamp between 0 and 1
+
+            castSession.setVolume(volume)
+                .setResultCallback(new ResultCallback<Status>() {
+                    @Override
+                    public void onResult(Status result) {
+                        if (result.isSuccess()) {
+                            JSObject jsResult = new JSObject();
+                            jsResult.put("success", true);
+                            jsResult.put("volume", volume);
+                            call.resolve(jsResult);
+                        } else {
+                            call.reject("Failed to set volume: " + result.getStatusMessage());
+                        }
+                    }
+                });
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting volume", e);
+            call.reject("Failed to set volume: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getVolume(PluginCall call) {
+        try {
+            if (castSession == null || !castSession.isConnected()) {
+                call.reject("No active Cast session");
+                return;
+            }
+
+            double volume = castSession.getVolume();
+            JSObject result = new JSObject();
+            result.put("volume", volume);
+            result.put("muted", castSession.isMute());
+            call.resolve(result);
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting volume", e);
+            call.reject("Failed to get volume: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getMediaStatus(PluginCall call) {
+        try {
+            if (castSession == null || !castSession.isConnected()) {
+                call.reject("No active Cast session");
+                return;
+            }
+
+            RemoteMediaClient remoteMediaClient = castSession.getRemoteMediaClient();
+            if (remoteMediaClient == null) {
+                call.reject("RemoteMediaClient not available");
+                return;
+            }
+
+            remoteMediaClient.getStatus()
+                .setResultCallback(new ResultCallback<com.google.android.gms.cast.MediaStatus>() {
+                    @Override
+                    public void onResult(com.google.android.gms.cast.MediaStatus status) {
+                        if (status != null) {
+                            JSObject result = new JSObject();
+                            result.put("isPlaying", status.getPlayerState() == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PLAYING);
+                            result.put("isPaused", status.getPlayerState() == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PAUSED);
+                            result.put("isBuffering", status.getPlayerState() == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_BUFFERING);
+                            result.put("currentTime", status.getStreamPosition());
+                            result.put("duration", status.getStreamDuration());
+                            result.put("volume", status.getStreamVolume());
+                            result.put("muted", status.isMute());
+                            
+                            com.google.android.gms.cast.MediaInfo mediaInfo = status.getMediaInfo();
+                            if (mediaInfo != null) {
+                                result.put("title", mediaInfo.getMetadata().getString(MediaMetadata.KEY_TITLE));
+                                result.put("subtitle", mediaInfo.getMetadata().getString(MediaMetadata.KEY_SUBTITLE));
+                            }
+                            
+                            call.resolve(result);
+                        } else {
+                            call.reject("Failed to get media status");
+                        }
+                    }
+                });
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting media status", e);
+            call.reject("Failed to get media status: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
     public void getSessionState(PluginCall call) {
         try {
             JSObject result = new JSObject();

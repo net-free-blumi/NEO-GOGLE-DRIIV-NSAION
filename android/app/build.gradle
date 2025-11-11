@@ -50,7 +50,6 @@ dependencies {
     
     // Media Session for background playback
     implementation 'androidx.media:media:1.7.0'
-    implementation 'androidx.media3:media3-session:1.2.0'
     
     // Network discovery support
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'

@@ -214,10 +214,35 @@ const UnifiedSpeakerSelector = ({
     const discoveredSpeakers: Speaker[] = [];
 
     try {
-      // 1. Chromecast / Google Cast - תמיד להוסיף אם SDK זמין
-      // Google Cast SDK תמיד זמין בדפדפן Chrome/Edge
-      // גם אם לא נמצאו מכשירים, נוסיף את האפשרות - ה-picker יראה את כל המכשירים
-      if ((window as any).cast?.framework || (window as any).chrome?.cast) {
+      // 1. Chromecast / Google Cast - ב-Android: משתמש ב-native discovery
+      if (Capacitor.isNativePlatform()) {
+        try {
+          // Use native Chromecast plugin
+          const initResult = await ChromecastNative.initialize();
+          if (initResult.available) {
+            const devicesResult = await ChromecastNative.discoverDevices();
+            if (devicesResult.devices && devicesResult.devices.length > 0) {
+              discoveredSpeakers.push(...devicesResult.devices.map((device: any) => ({
+                id: `chromecast-${device.id}`,
+                name: device.name || device.modelName || 'Chromecast',
+                type: 'Chromecast' as const,
+                friendlyName: device.name,
+              })));
+            } else {
+              // Still add option even if no devices found yet
+              discoveredSpeakers.push({
+                id: 'chromecast-connect',
+                name: 'Chromecast',
+                type: 'Chromecast' as const,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Native Chromecast discovery failed:', e);
+        }
+      } else {
+        // Web platform - use existing logic
+        if ((window as any).cast?.framework || (window as any).chrome?.cast) {
         try {
           const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
           if (ctx) {
@@ -708,8 +733,18 @@ const UnifiedSpeakerSelector = ({
           throw new Error("Chromecast לא זמין");
         }
 
-        // Start session (will show device picker)
-        await ChromecastNative.startSession();
+        // If we have a specific device ID, use auto-connect
+        // Otherwise, show device picker
+        const selectedSpeakerData = speakers.find((s: any) => s.id === selectedSpeaker);
+        const deviceId = selectedSpeakerData?.id?.replace('chromecast-', '');
+        
+        if (deviceId && deviceId !== 'connect') {
+          // Auto-connect to specific device (without popup)
+          await ChromecastNative.startSession({ deviceId });
+        } else {
+          // Show device picker
+          await ChromecastNative.startSession();
+        }
 
         // Wait for session to start
         let sessionStarted = false;
