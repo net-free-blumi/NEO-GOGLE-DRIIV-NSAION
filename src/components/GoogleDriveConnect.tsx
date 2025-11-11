@@ -70,7 +70,7 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
   async function listFilesPage(q: string, pageToken?: string) {
     const params = new URLSearchParams({
       q,
-      fields: 'nextPageToken, files(id,name,mimeType,size,modifiedTime,shortcutDetails,thumbnailLink)',
+      fields: 'nextPageToken, files(id,name,mimeType,size,modifiedTime,shortcutDetails,thumbnailLink,imageMediaMetadata)',
       orderBy: 'name',
       pageSize: '1000',
       supportsAllDrives: 'true',
@@ -123,8 +123,10 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
     size?: string;
     modifiedTime?: string;
     folderPath: string;
+    thumbnailLink?: string; // For embedded album art
   }> = [];
   const folderImages = new Map<string, string>(); // folderPath -> imageUrl
+  const fileThumbnails = new Map<string, string>(); // fileId -> thumbnailUrl
 
   while (queue.length) {
     const { id: folderId, path: currentPath } = queue.shift()!;
@@ -182,30 +184,72 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
         // Resolve shortcut target
         const targetId = item.shortcutDetails.targetId;
         if (looksLikeAudio(item.name)) {
-          foundFiles.push({ 
+          const fileData: any = {
             id: targetId, 
             name: item.name, 
             mimeType: undefined,
             size: undefined,
             modifiedTime: undefined,
             folderPath: currentPath
-          });
+          };
+          
+          // Check if shortcut has thumbnailLink
+          if ((item as any).thumbnailLink) {
+            fileData.thumbnailLink = (item as any).thumbnailLink;
+            fileThumbnails.set(targetId, (item as any).thumbnailLink);
+          }
+          
+          foundFiles.push(fileData);
         }
         continue;
       }
 
       if (looksLikeAudio(item.name, item.mimeType)) {
-        foundFiles.push({ 
+        const fileData: any = {
           id: item.id, 
           name: item.name, 
           mimeType: item.mimeType,
           size: (item as any).size,
           modifiedTime: (item as any).modifiedTime,
           folderPath: currentPath
-        });
+        };
+        
+        // Check if file has thumbnailLink (embedded album art from Google Drive)
+        if ((item as any).thumbnailLink) {
+          fileData.thumbnailLink = (item as any).thumbnailLink;
+          // Store thumbnail URL for this file
+          fileThumbnails.set(item.id, (item as any).thumbnailLink);
+        }
+        
+        foundFiles.push(fileData);
       }
     }
   }
+
+  // First, try to get thumbnails for files that don't have them yet
+  // Batch process files without thumbnails (limit to avoid too many requests)
+  const filesWithoutThumbnails = foundFiles.filter(f => !f.thumbnailLink && !fileThumbnails.has(f.id)).slice(0, 50); // Limit to 50 to avoid rate limits
+  
+  // Fetch thumbnails in parallel (but limit concurrency)
+  const thumbnailPromises = filesWithoutThumbnails.map(async (f) => {
+    try {
+      const fileInfoResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${f.id}?fields=thumbnailLink`,
+        { headers }
+      );
+      if (fileInfoResponse.ok) {
+        const fileInfo = await fileInfoResponse.json();
+        if (fileInfo.thumbnailLink) {
+          fileThumbnails.set(f.id, fileInfo.thumbnailLink);
+        }
+      }
+    } catch (e) {
+      // Silent fail - will use folder image or default
+    }
+  });
+  
+  // Wait for all thumbnail requests to complete (with timeout)
+  await Promise.allSettled(thumbnailPromises);
 
   // Map to Song objects
   const songs: Song[] = foundFiles.map((f) => {
@@ -215,8 +259,23 @@ export async function loadSongsFromDrive(accessToken: string): Promise<Song[]> {
       ? `${proxyBase}/${encodeURIComponent(f.id)}`
       : `${proxyBase}/${encodeURIComponent(f.id)}?token=${encodeURIComponent(accessToken)}`;
     
-    // Get cover image from folder
-    const coverUrl = f.folderPath ? folderImages.get(f.folderPath) : undefined;
+    // Priority for cover image:
+    // 1. Embedded thumbnail from file (thumbnailLink from Google Drive) - highest priority
+    //    Google Drive automatically extracts embedded album art from audio files
+    // 2. Folder image (if exists)
+    let coverUrl: string | undefined = undefined;
+    
+    // First, try to get embedded thumbnail from the file itself
+    if (f.thumbnailLink) {
+      coverUrl = f.thumbnailLink;
+    } else if (fileThumbnails.has(f.id)) {
+      coverUrl = fileThumbnails.get(f.id);
+    }
+    
+    // If no embedded thumbnail, try folder image
+    if (!coverUrl && f.folderPath) {
+      coverUrl = folderImages.get(f.folderPath);
+    }
     
     return {
       id: f.id,
