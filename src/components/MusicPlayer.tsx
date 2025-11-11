@@ -2075,6 +2075,10 @@ const MusicPlayer = ({
             </div>
 
 
+            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
+            <div className="flex flex-col items-center gap-6 w-full">
+              {/* Main Controls */}
+              <div className="flex items-center gap-4 md:gap-6">
 
                 {/* כפתור עצירה - באמצע */}
                 {onStop && (
@@ -2092,13 +2096,6 @@ const MusicPlayer = ({
                     <Square className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                   </Button>
                 )}
-
-
-            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
-            <div className="flex flex-col items-center gap-6 w-full">
-              {/* Main Controls */}
-              <div className="flex items-center gap-4 md:gap-6">
-               
                 
                 {/* כפתור שיר הבא - מימין */}
                 <Button
