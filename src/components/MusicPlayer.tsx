@@ -1828,22 +1828,25 @@ const MusicPlayer = ({
               )}
             {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
             <div className="flex items-center justify-center gap-1 sm:gap-2 flex-shrink-0">
-              {/* כפתור שיר קודם - משמאל */}
+            
+              
+              
+              {/* כפתור שיר הבא - מימין */}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={onPrevious}
+                onClick={onNext}
                 onTouchEnd={(e) => {
                   e.preventDefault();
-                  onPrevious();
+                  onNext();
                 }}
                 className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-                title="שיר קודם"
+                title="שיר הבא"
               >
-                <SkipBack className="w-5 h-5" />
+                <SkipForward className="w-5 h-5" />
               </Button>
-              
-              
+
+
               {/* כפתור נגינה/השהה - באמצע */}
               <Button
                 variant="default"
@@ -1866,19 +1869,20 @@ const MusicPlayer = ({
                 )}
               </Button>
               
-              {/* כפתור שיר הבא - מימין */}
-              <Button
+
+                {/* כפתור שיר קודם - משמאל */}
+                <Button
                 variant="ghost"
                 size="icon"
-                onClick={onNext}
+                onClick={onPrevious}
                 onTouchEnd={(e) => {
                   e.preventDefault();
-                  onNext();
+                  onPrevious();
                 }}
                 className="w-10 h-10 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 active:scale-95 transition-all touch-manipulation"
-                title="שיר הבא"
+                title="שיר קודם"
               >
-                <SkipForward className="w-5 h-5" />
+                <SkipBack className="w-5 h-5" />
               </Button>
               
               {/* כפתור מרובה - אחרי הכפתורים */}
@@ -2070,25 +2074,8 @@ const MusicPlayer = ({
               )}
             </div>
 
-            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
-            <div className="flex flex-col items-center gap-6 w-full">
-              {/* Main Controls */}
-              <div className="flex items-center gap-4 md:gap-6">
-                {/* כפתור שיר קודם - משמאל */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onPrevious}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    onPrevious();
-                  }}
-                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
-                  title="שיר קודם"
-                >
-                  <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
-                </Button>
-                
+
+
                 {/* כפתור עצירה - באמצע */}
                 {onStop && (
                   <Button
@@ -2105,6 +2092,29 @@ const MusicPlayer = ({
                     <Square className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                   </Button>
                 )}
+
+
+            {/* Controls - סידור בעברית: קודם משמאל, עצירה באמצע, הבא מימין, כפתור מרובה אחרי */}
+            <div className="flex flex-col items-center gap-6 w-full">
+              {/* Main Controls */}
+              <div className="flex items-center gap-4 md:gap-6">
+               
+                
+                {/* כפתור שיר הבא - מימין */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onNext}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    onNext();
+                  }}
+                  className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
+                  title="שיר הבא"
+                >
+                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+                </Button>
+                
                 
                 {/* כפתור נגינה/השהה - באמצע */}
                 <Button
@@ -2127,20 +2137,23 @@ const MusicPlayer = ({
                     <Play className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" fill="currentColor" />
                   )}
                 </Button>
-                
-                {/* כפתור שיר הבא - מימין */}
-                <Button
+
+
+
+
+                 {/* כפתור שיר קודם - משמאל */}
+                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={onNext}
+                  onClick={onPrevious}
                   onTouchEnd={(e) => {
                     e.preventDefault();
-                    onNext();
+                    onPrevious();
                   }}
                   className="w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 hover:bg-secondary/80 transition-colors touch-manipulation"
-                  title="שיר הבא"
+                  title="שיר קודם"
                 >
-                  <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+                  <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
                 </Button>
                 
                 {/* כפתור מרובה - אחרי הכפתורים */}
