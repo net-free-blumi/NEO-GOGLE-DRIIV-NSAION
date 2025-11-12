@@ -28,7 +28,7 @@
         <!-- Chromecast support -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="com.google.android.gms.cast.framework.OptionsProvider" />
+            android:value="com.cloudtunes.music.CastOptionsProvider" />
 
         <!-- Background Music Playback Service -->
         <service

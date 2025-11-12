@@ -7,9 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.media.AudioManager;
-import android.media.MediaMetadata;
-import android.media.session.MediaSession;
-import android.media.session.PlaybackState;
+import androidx.media.MediaMetadataCompat;
+import androidx.media.session.MediaSessionCompat;
+import androidx.media.session.PlaybackStateCompat;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
@@ -25,7 +25,7 @@ public class MusicPlaybackService extends Service {
     private static final String CHANNEL_ID = "music_playback_channel";
     private static final int NOTIFICATION_ID = 1;
     
-    private MediaSession mediaSession;
+    private MediaSessionCompat mediaSession;
     private final IBinder binder = new LocalBinder();
     private boolean isPlaying = false;
     private String currentTitle = "";
@@ -44,8 +44,8 @@ public class MusicPlaybackService extends Service {
         Log.d(TAG, "MusicPlaybackService created");
         
         // Create MediaSession
-        mediaSession = new MediaSession(this, "CloudTunes");
-        mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+        mediaSession = new MediaSessionCompat(this, "CloudTunes");
+        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
         mediaSession.setActive(true);
         
         // Create notification channel
@@ -167,12 +167,12 @@ public class MusicPlaybackService extends Service {
         currentArtist = artist;
         currentArtworkUrl = artworkUrl;
         
-        MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, artist);
+        MediaMetadataCompat.Builder metadataBuilder = new MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist);
         
         if (!artworkUrl.isEmpty()) {
-            metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, artworkUrl);
+            metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUrl);
         }
         
         mediaSession.setMetadata(metadataBuilder.build());
@@ -182,17 +182,17 @@ public class MusicPlaybackService extends Service {
     public void setPlaybackState(boolean playing, long position, long duration) {
         isPlaying = playing;
         
-        int state = playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
+        int state = playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
         
-        PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
+        PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
             .setState(state, position, 1.0f)
             .setActions(
-                PlaybackState.ACTION_PLAY |
-                PlaybackState.ACTION_PAUSE |
-                PlaybackState.ACTION_STOP |
-                PlaybackState.ACTION_SKIP_TO_NEXT |
-                PlaybackState.ACTION_SKIP_TO_PREVIOUS |
-                PlaybackState.ACTION_SEEK_TO
+                PlaybackStateCompat.ACTION_PLAY |
+                PlaybackStateCompat.ACTION_PAUSE |
+                PlaybackStateCompat.ACTION_STOP |
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT |
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
+                PlaybackStateCompat.ACTION_SEEK_TO
             );
         
         mediaSession.setPlaybackState(stateBuilder.build());
@@ -233,7 +233,7 @@ public class MusicPlaybackService extends Service {
         // Notify Capacitor plugin
     }
     
-    public MediaSession getMediaSession() {
-        return mediaSession;
+    public MediaSessionCompat.Token getMediaSessionToken() {
+        return mediaSession.getSessionToken();
     }
 }

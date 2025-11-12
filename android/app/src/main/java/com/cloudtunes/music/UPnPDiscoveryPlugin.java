@@ -9,33 +9,24 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import org.fourthline.cling.UpnpService;
-import org.fourthline.cling.UpnpServiceImpl;
-import org.fourthline.cling.android.AndroidUpnpServiceConfiguration;
-import org.fourthline.cling.model.meta.RemoteDevice;
-import org.fourthline.cling.model.meta.LocalDevice;
-import org.fourthline.cling.registry.Registry;
-import org.fourthline.cling.registry.RegistryListener;
-import org.fourthline.cling.controlpoint.ControlPoint;
-import org.fourthline.cling.model.action.ActionInvocation;
-import org.fourthline.cling.model.message.UpnpResponse;
-import org.fourthline.cling.model.meta.Service;
-import org.fourthline.cling.support.avtransport.callback.SetAVTransportURI;
-import org.fourthline.cling.support.avtransport.callback.Play;
-import org.fourthline.cling.support.avtransport.callback.Pause;
-import org.fourthline.cling.support.avtransport.callback.Stop;
-import org.fourthline.cling.support.model.ProtocolInfo;
-import org.fourthline.cling.support.model.ProtocolInfos;
-import org.fourthline.cling.support.model.dlna.DLNAProfiles;
-import org.fourthline.cling.support.model.dlna.DLNAProtocolInfo;
-import org.fourthline.cling.support.renderingcontrol.callback.SetVolume;
-import org.fourthline.cling.support.renderingcontrol.callback.GetVolume;
-import org.fourthline.cling.support.model.Channel;
+import org.cybergarage.upnp.Device;
+import org.cybergarage.upnp.DeviceList;
+import org.cybergarage.upnp.ControlPoint;
+import org.cybergarage.upnp.device.DeviceChangeListener;
+import org.cybergarage.upnp.ssdp.SSDPPacket;
+import org.cybergarage.upnp.control.Action;
+import org.cybergarage.upnp.control.ActionListener;
+import org.cybergarage.upnp.Service;
+import org.cybergarage.upnp.ArgumentList;
+import org.cybergarage.upnp.Argument;
+
+import java.util.List;
+import java.util.ArrayList;
 
 @CapacitorPlugin(name = "UPnPDiscovery")
 public class UPnPDiscoveryPlugin extends Plugin {
     private static final String TAG = "UPnPDiscoveryPlugin";
-    private UpnpService upnpService;
+    private ControlPoint controlPoint;
     private WifiManager.MulticastLock multicastLock;
     private List<JSObject> discoveredDevices = new ArrayList<>();
 
@@ -56,62 +47,27 @@ public class UPnPDiscoveryPlugin extends Plugin {
                 multicastLock.acquire();
             }
 
-            // Start UPnP service with SSDP discovery
-            upnpService = new UpnpServiceImpl(new AndroidUpnpServiceConfiguration(getContext()));
+            // Start UPnP ControlPoint with SSDP discovery
+            controlPoint = new ControlPoint();
             
-            // Add registry listener to discover devices via SSDP
-            upnpService.getRegistry().addListener(new RegistryListener() {
+            // Add device change listener to discover devices via SSDP
+            controlPoint.addDeviceChangeListener(new DeviceChangeListener() {
                 @Override
-                public void remoteDeviceDiscoveryStarted(Registry registry, RemoteDevice device) {
-                    Log.d(TAG, "SSDP Discovery started: " + device.getDisplayString());
+                public void deviceAdded(Device dev) {
+                    Log.d(TAG, "SSDP Discovery: Device added - " + dev.getFriendlyName());
+                    addDevice(dev);
                 }
 
                 @Override
-                public void remoteDeviceDiscoveryFailed(Registry registry, RemoteDevice device, Exception ex) {
-                    Log.w(TAG, "SSDP Discovery failed: " + device.getDisplayString(), ex);
-                }
-
-                @Override
-                public void remoteDeviceAdded(Registry registry, RemoteDevice device) {
-                    Log.d(TAG, "Device discovered via SSDP: " + device.getDisplayString());
-                    addDevice(device);
-                }
-
-                @Override
-                public void remoteDeviceUpdated(Registry registry, RemoteDevice device) {
-                    Log.d(TAG, "Device updated: " + device.getDisplayString());
-                    updateDevice(device);
-                }
-
-                @Override
-                public void remoteDeviceRemoved(Registry registry, RemoteDevice device) {
-                    Log.d(TAG, "Device removed: " + device.getDisplayString());
-                    removeDevice(device);
-                }
-
-                @Override
-                public void localDeviceAdded(Registry registry, LocalDevice device) {
-                    // Ignore local devices
-                }
-
-                @Override
-                public void localDeviceRemoved(Registry registry, LocalDevice device) {
-                    // Ignore local devices
-                }
-
-                @Override
-                public void beforeShutdown(Registry registry) {
-                    // Ignore
-                }
-
-                @Override
-                public void afterShutdown(Registry registry) {
-                    // Ignore
+                public void deviceRemoved(Device dev) {
+                    Log.d(TAG, "SSDP Discovery: Device removed - " + dev.getFriendlyName());
+                    removeDevice(dev);
                 }
             });
 
             // Start SSDP search (M-SEARCH)
-            upnpService.getControlPoint().search();
+            controlPoint.start();
+            controlPoint.search();
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -126,9 +82,9 @@ public class UPnPDiscoveryPlugin extends Plugin {
     @PluginMethod
     public void stopDiscovery(PluginCall call) {
         try {
-            if (upnpService != null) {
-                upnpService.shutdown();
-                upnpService = null;
+            if (controlPoint != null) {
+                controlPoint.stop();
+                controlPoint = null;
             }
 
             if (multicastLock != null && multicastLock.isHeld()) {
@@ -166,16 +122,17 @@ public class UPnPDiscoveryPlugin extends Plugin {
             }
 
             // Find device
-            RemoteDevice device = findDeviceById(deviceId);
+            Device device = findDeviceById(deviceId);
             if (device == null) {
                 call.reject("Device not found");
                 return;
             }
 
             // Find AVTransport service
-            Service avTransportService = device.findService(
-                org.fourthline.cling.model.types.ServiceType.valueOf("AVTransport")
-            );
+            Service avTransportService = device.getService("urn:schemas-upnp-org:service:AVTransport:1");
+            if (avTransportService == null) {
+                avTransportService = device.getService("urn:schemas-upnp-org:service:AVTransport:2");
+            }
 
             if (avTransportService == null) {
                 call.reject("Device does not support AVTransport");
@@ -183,35 +140,38 @@ public class UPnPDiscoveryPlugin extends Plugin {
             }
 
             // Set AVTransport URI and play
-            ControlPoint controlPoint = upnpService.getControlPoint();
-            
-            controlPoint.execute(new SetAVTransportURI(avTransportService, mediaUrl, createMetadata(title)) {
-                @Override
-                public void success(ActionInvocation invocation) {
+            Action setURIAction = avTransportService.getAction("SetAVTransportURI");
+            if (setURIAction != null) {
+                setURIAction.setArgumentValue("InstanceID", "0");
+                setURIAction.setArgumentValue("CurrentURI", mediaUrl);
+                setURIAction.setArgumentValue("CurrentURIMetaData", createMetadata(title));
+                
+                if (setURIAction.postControlAction()) {
                     Log.d(TAG, "Media URI set successfully");
-                    controlPoint.execute(new Play(avTransportService) {
-                        @Override
-                        public void success(ActionInvocation invocation) {
+                    
+                    // Play
+                    Action playAction = avTransportService.getAction("Play");
+                    if (playAction != null) {
+                        playAction.setArgumentValue("InstanceID", "0");
+                        playAction.setArgumentValue("Speed", "1");
+                        
+                        if (playAction.postControlAction()) {
                             Log.d(TAG, "Playback started");
                             JSObject result = new JSObject();
                             result.put("success", true);
                             call.resolve(result);
+                        } else {
+                            call.reject("Failed to play");
                         }
-
-                        @Override
-                        public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
-                            Log.e(TAG, "Playback failed: " + defaultMsg);
-                            call.reject("Failed to play: " + defaultMsg);
-                        }
-                    });
+                    } else {
+                        call.reject("Play action not available");
+                    }
+                } else {
+                    call.reject("Failed to set media URI");
                 }
-
-                @Override
-                public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
-                    Log.e(TAG, "Set URI failed: " + defaultMsg);
-                    call.reject("Failed to set media URI: " + defaultMsg);
-                }
-            });
+            } else {
+                call.reject("SetAVTransportURI action not available");
+            }
 
         } catch (Exception e) {
             Log.e(TAG, "Error playing media", e);
@@ -230,42 +190,44 @@ public class UPnPDiscoveryPlugin extends Plugin {
                 return;
             }
 
-            RemoteDevice device = findDeviceById(deviceId);
+            Device device = findDeviceById(deviceId);
             if (device == null) {
                 call.reject("Device not found");
                 return;
             }
 
             // Find RenderingControl service
-            Service renderingControlService = device.findService(
-                org.fourthline.cling.model.types.ServiceType.valueOf("RenderingControl")
-            );
+            Service renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:1");
+            if (renderingControlService == null) {
+                renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:2");
+            }
 
             if (renderingControlService == null) {
                 call.reject("Device does not support volume control");
                 return;
             }
 
-            // Set volume (0-100, convert to 0-1.0 for UPnP)
-            double volumeNormalized = Math.max(0.0, Math.min(1.0, volume / 100.0));
+            // Set volume (0-100, convert to string for UPnP)
+            String volumeStr = String.valueOf(volume);
             
-            ControlPoint controlPoint = upnpService.getControlPoint();
-            controlPoint.execute(new SetVolume(renderingControlService, volumeNormalized) {
-                @Override
-                public void success(ActionInvocation invocation) {
+            Action setVolumeAction = renderingControlService.getAction("SetVolume");
+            if (setVolumeAction != null) {
+                setVolumeAction.setArgumentValue("InstanceID", "0");
+                setVolumeAction.setArgumentValue("Channel", "Master");
+                setVolumeAction.setArgumentValue("DesiredVolume", volumeStr);
+                
+                if (setVolumeAction.postControlAction()) {
                     Log.d(TAG, "Volume set successfully");
                     JSObject result = new JSObject();
                     result.put("success", true);
                     result.put("volume", volume);
                     call.resolve(result);
+                } else {
+                    call.reject("Failed to set volume");
                 }
-
-                @Override
-                public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
-                    Log.e(TAG, "Set volume failed: " + defaultMsg);
-                    call.reject("Failed to set volume: " + defaultMsg);
-                }
-            });
+            } else {
+                call.reject("SetVolume action not available");
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error setting volume", e);
             call.reject("Failed to set volume: " + e.getMessage());
@@ -282,51 +244,58 @@ public class UPnPDiscoveryPlugin extends Plugin {
                 return;
             }
 
-            RemoteDevice device = findDeviceById(deviceId);
+            Device device = findDeviceById(deviceId);
             if (device == null) {
                 call.reject("Device not found");
                 return;
             }
 
             // Find RenderingControl service
-            Service renderingControlService = device.findService(
-                org.fourthline.cling.model.types.ServiceType.valueOf("RenderingControl")
-            );
+            Service renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:1");
+            if (renderingControlService == null) {
+                renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:2");
+            }
 
             if (renderingControlService == null) {
                 call.reject("Device does not support volume control");
                 return;
             }
 
-            ControlPoint controlPoint = upnpService.getControlPoint();
-            controlPoint.execute(new GetVolume(renderingControlService) {
-                @Override
-                public void received(ActionInvocation invocation, double currentVolume) {
-                    // Convert from 0-1.0 to 0-100
-                    int volumePercent = (int) (currentVolume * 100);
-                    JSObject result = new JSObject();
-                    result.put("volume", volumePercent);
-                    result.put("muted", false); // UPnP doesn't always support mute
-                    call.resolve(result);
+            Action getVolumeAction = renderingControlService.getAction("GetVolume");
+            if (getVolumeAction != null) {
+                getVolumeAction.setArgumentValue("InstanceID", "0");
+                getVolumeAction.setArgumentValue("Channel", "Master");
+                
+                if (getVolumeAction.postControlAction()) {
+                    Argument volumeArg = getVolumeAction.getArgument("CurrentVolume");
+                    if (volumeArg != null) {
+                        int volume = Integer.parseInt(volumeArg.getValue());
+                        JSObject result = new JSObject();
+                        result.put("volume", volume);
+                        result.put("muted", false); // UPnP doesn't always support mute
+                        call.resolve(result);
+                    } else {
+                        call.reject("Failed to get volume value");
+                    }
+                } else {
+                    call.reject("Failed to get volume");
                 }
-
-                @Override
-                public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
-                    Log.e(TAG, "Get volume failed: " + defaultMsg);
-                    call.reject("Failed to get volume: " + defaultMsg);
-                }
-            });
+            } else {
+                call.reject("GetVolume action not available");
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error getting volume", e);
             call.reject("Failed to get volume: " + e.getMessage());
         }
     }
 
-    private RemoteDevice findDeviceById(String deviceId) {
-        if (upnpService == null) return null;
+    private Device findDeviceById(String deviceId) {
+        if (controlPoint == null) return null;
         
-        for (RemoteDevice device : upnpService.getRegistry().getRemoteDevices()) {
-            if (device.getIdentity().getUdn().toString().equals(deviceId)) {
+        DeviceList deviceList = controlPoint.getDeviceList();
+        for (int n = 0; n < deviceList.size(); n++) {
+            Device device = deviceList.getDevice(n);
+            if (device.getUDN().equals(deviceId)) {
                 return device;
             }
         }
@@ -335,35 +304,37 @@ public class UPnPDiscoveryPlugin extends Plugin {
 
     private String createMetadata(String title) {
         // Create DIDL-Lite metadata (simplified)
-        return "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
+        return "<?xml version=\"1.0\"?>" +
+               "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
                "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
-               "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\"&gt;" +
-               "&lt;item id=\"1\" parentID=\"0\" restricted=\"true\"&gt;" +
-               "&lt;dc:title&gt;" + title + "&lt;/dc:title&gt;" +
-               "&lt;/item&gt;" +
-               "&lt;/DIDL-Lite&gt;";
+               "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">" +
+               "<item id=\"1\" parentID=\"0\" restricted=\"true\">" +
+               "<dc:title>" + escapeXml(title) + "</dc:title>" +
+               "</item>" +
+               "</DIDL-Lite>";
     }
 
-    private void addDevice(RemoteDevice device) {
+    private String escapeXml(String text) {
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&apos;");
+    }
+
+    private void addDevice(Device device) {
         try {
             JSObject deviceObj = new JSObject();
-            deviceObj.put("id", device.getIdentity().getUdn().toString());
-            deviceObj.put("name", device.getDisplayString());
+            deviceObj.put("id", device.getUDN());
+            deviceObj.put("name", device.getFriendlyName());
             deviceObj.put("type", "UPnP");
-            deviceObj.put("friendlyName", device.getDetails().getFriendlyName());
-            
-            String deviceURL = device.getIdentity().getDescriptorURL().toString();
-            deviceObj.put("url", deviceURL);
+            deviceObj.put("friendlyName", device.getFriendlyName());
+            deviceObj.put("url", device.getLocation());
             
             // Check if device supports AVTransport
-            try {
-                org.fourthline.cling.model.types.ServiceType avTransportType = 
-                    org.fourthline.cling.model.types.ServiceType.valueOf("AVTransport");
-                boolean supportsAVTransport = device.findService(avTransportType) != null;
-                deviceObj.put("supportsPlayback", supportsAVTransport);
-            } catch (Exception e) {
-                deviceObj.put("supportsPlayback", false);
-            }
+            boolean supportsAVTransport = device.getService("urn:schemas-upnp-org:service:AVTransport:1") != null ||
+                                         device.getService("urn:schemas-upnp-org:service:AVTransport:2") != null;
+            deviceObj.put("supportsPlayback", supportsAVTransport);
 
             discoveredDevices.add(deviceObj);
             notifyListeners("deviceDiscovered", deviceObj);
@@ -372,15 +343,10 @@ public class UPnPDiscoveryPlugin extends Plugin {
         }
     }
 
-    private void updateDevice(RemoteDevice device) {
-        removeDevice(device);
-        addDevice(device);
-    }
-
-    private void removeDevice(RemoteDevice device) {
+    private void removeDevice(Device device) {
         discoveredDevices.removeIf(d -> {
             try {
-                return d.getString("id").equals(device.getIdentity().getUdn().toString());
+                return d.getString("id").equals(device.getUDN());
             } catch (Exception e) {
                 return false;
             }
@@ -390,8 +356,8 @@ public class UPnPDiscoveryPlugin extends Plugin {
     @Override
     public void handleOnDestroy() {
         super.handleOnDestroy();
-        if (upnpService != null) {
-            upnpService.shutdown();
+        if (controlPoint != null) {
+            controlPoint.stop();
         }
         if (multicastLock != null && multicastLock.isHeld()) {
             multicastLock.release();

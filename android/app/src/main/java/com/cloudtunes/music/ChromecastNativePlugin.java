@@ -35,16 +35,22 @@ public class ChromecastNativePlugin extends Plugin {
     public void load() {
         super.load();
         try {
-            // Initialize Cast Context
-            CastOptions castOptions = new CastOptions.Builder()
-                .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
-                .build();
+            // Initialize Cast Context - it should already be initialized via AndroidManifest
+            // If not, we'll try to get it (may return null if not properly configured)
+            try {
+                castContext = CastContext.getSharedInstance(getContext());
+                if (castContext != null) {
+                    sessionManager = castContext.getSessionManager();
+                } else {
+                    Log.w(TAG, "CastContext not available - make sure CastOptionsProvider is configured in AndroidManifest");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "CastContext not initialized - Cast may not be available", e);
+            }
             
-            castContext = CastContext.getSharedInstance(getContext());
-            sessionManager = castContext.getSessionManager();
-            
-            // Add session manager listener
-            sessionManager.addSessionManagerListener(new CastSessionManagerListener<CastSession>() {
+            // Add session manager listener only if sessionManager is available
+            if (sessionManager != null) {
+                sessionManager.addSessionManagerListener(new CastSessionManagerListener<CastSession>() {
                 @Override
                 public void onSessionStarting(CastSession session) {
                     Log.d(TAG, "Cast session starting");
@@ -109,7 +115,8 @@ public class ChromecastNativePlugin extends Plugin {
                     Log.d(TAG, "Cast session suspended: " + reason);
                     notifyListeners("sessionSuspended", new JSObject());
                 }
-            });
+                });
+            }
             
             Log.d(TAG, "Chromecast plugin loaded successfully");
         } catch (Exception e) {
@@ -192,12 +199,12 @@ public class ChromecastNativePlugin extends Plugin {
                     call.reject("Device not found: " + deviceId);
                 }
             } else {
-                // Show device picker (fallback)
-                sessionManager.startSession(CastOptions.CastDeviceFilterPolicy.FILTER_NONE);
-                
+                // Show device picker (fallback) - use CastButtonFactory to show picker
+                // Note: This requires UI context, so we'll return a message indicating picker should be shown
                 JSObject result = new JSObject();
                 result.put("success", true);
-                result.put("message", "Session start requested (picker will show)");
+                result.put("message", "Please use Cast button to select device");
+                result.put("showPicker", true);
                 call.resolve(result);
             }
         } catch (Exception e) {
@@ -517,4 +524,3 @@ public class ChromecastNativePlugin extends Plugin {
         }
     }
 }
-
