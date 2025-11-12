@@ -243,84 +243,85 @@ const UnifiedSpeakerSelector = ({
       } else {
         // Web platform - use existing logic
         if ((window as any).cast?.framework || (window as any).chrome?.cast) {
-        try {
-          const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
-          if (ctx) {
-            // Initialize Cast Context
-            try {
-              ctx.setOptions({
-                receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
-                autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
-              });
-            } catch (e) {
-              console.log('Error setting Cast options:', e);
-            }
-            
-            // Check if already connected
-            if (chromecast.state.isConnected && chromecast.state.device) {
-              discoveredSpeakers.push({
-                id: `chromecast-${chromecast.state.device.id}`,
-                name: chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast',
-                type: 'Chromecast'
-              });
-            } else {
-              // Always show Chromecast option if Cast SDK is available
-              // The picker will show all available devices when clicked
-              const session = ctx.getCurrentSession();
-              if (session && typeof session.getReceiver === 'function') {
-                try {
-                  const receiver = session.getReceiver();
-                  if (receiver) {
-                    discoveredSpeakers.push({
-                      id: `chromecast-${receiver.friendlyName || 'connected'}`,
-                      name: receiver.friendlyName || 'Chromecast',
-                      type: 'Chromecast'
-                    });
-                  }
-                } catch (e) {
-                  console.log('Error getting receiver from session:', e);
-                  // Fall through to show connect option
-                }
+          try {
+            const ctx = (window as any).cast?.framework?.CastContext?.getInstance();
+            if (ctx) {
+              // Initialize Cast Context
+              try {
+                ctx.setOptions({
+                  receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                  autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+                });
+              } catch (e) {
+                console.log('Error setting Cast options:', e);
               }
               
-              // If no active session, show connect option
-              if (!session || !discoveredSpeakers.some(s => s.id.startsWith('chromecast-'))) {
-                // Show option to connect - when clicked, will show picker with all devices
-                // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
-                // Google Cast SDK will show ALL available devices in the picker
+              // Check if already connected
+              if (chromecast.state.isConnected && chromecast.state.device) {
                 discoveredSpeakers.push({
-                  id: 'chromecast-connect',
-                  name: 'Chromecast',
+                  id: `chromecast-${chromecast.state.device.id}`,
+                  name: chromecast.state.device.name || chromecast.state.device.friendlyName || 'Chromecast',
                   type: 'Chromecast'
                 });
+              } else {
+                // Always show Chromecast option if Cast SDK is available
+                // The picker will show all available devices when clicked
+                const session = ctx.getCurrentSession();
+                if (session && typeof session.getReceiver === 'function') {
+                  try {
+                    const receiver = session.getReceiver();
+                    if (receiver) {
+                      discoveredSpeakers.push({
+                        id: `chromecast-${receiver.friendlyName || 'connected'}`,
+                        name: receiver.friendlyName || 'Chromecast',
+                        type: 'Chromecast'
+                      });
+                    }
+                  } catch (e) {
+                    console.log('Error getting receiver from session:', e);
+                    // Fall through to show connect option
+                  }
+                }
+                
+                // If no active session, show connect option
+                if (!session || !discoveredSpeakers.some(s => s.id.startsWith('chromecast-'))) {
+                  // Show option to connect - when clicked, will show picker with all devices
+                  // This includes Chromecast devices, Smart TVs, and other Cast-enabled devices
+                  // Google Cast SDK will show ALL available devices in the picker
+                  discoveredSpeakers.push({
+                    id: 'chromecast-connect',
+                    name: 'Chromecast',
+                    type: 'Chromecast'
+                  });
+                }
               }
+            } else {
+              // Cast SDK loaded but Context not available yet
+              // Still add the option - it will work when clicked
+              discoveredSpeakers.push({
+                id: 'chromecast-connect',
+                name: 'Chromecast',
+                type: 'Chromecast'
+              });
             }
-          } else {
-            // Cast SDK loaded but Context not available yet
-            // Still add the option - it will work when clicked
+          } catch (e) {
+            console.error('Chromecast error:', e);
+            // Even if there's an error, try to add the option
             discoveredSpeakers.push({
               id: 'chromecast-connect',
               name: 'Chromecast',
               type: 'Chromecast'
             });
           }
-        } catch (e) {
-          console.error('Chromecast error:', e);
-          // Even if there's an error, try to add the option
-          discoveredSpeakers.push({
-            id: 'chromecast-connect',
-            name: 'Chromecast',
-            type: 'Chromecast'
-          });
-        }
-      } else {
-        // Cast SDK not loaded - check if we're in Chrome/Edge
-        const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-        const isEdge = /Edg/.test(navigator.userAgent);
-        if (isChrome || isEdge) {
-          // Cast SDK should be available in Chrome/Edge
-          // Wait a bit and try again
-          console.log('Waiting for Chromecast SDK to load...');
+        } else {
+          // Cast SDK not loaded - check if we're in Chrome/Edge
+          const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+          const isEdge = /Edg/.test(navigator.userAgent);
+          if (isChrome || isEdge) {
+            // Cast SDK should be available in Chrome/Edge
+            // Wait a bit and try again
+            console.log('Waiting for Chromecast SDK to load...');
+          }
         }
       }
 
