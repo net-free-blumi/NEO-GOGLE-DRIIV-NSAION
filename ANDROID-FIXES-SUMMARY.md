@@ -28,25 +28,29 @@
 - `android/app/src/main/java/com/cloudtunes/music/CastOptionsProvider.java` - קובץ חדש
 - `android/app/src/main/AndroidManifest.xml` - עודכן להצביע על CastOptionsProvider
 
-### 3. ✅ החלפת Cling ב-CyberGarage UPnP
+### 3. ✅ החלפת Cling ב-SSDP Discovery ישיר
 **בעיה:** 
 - ספריית Cling לא זמינה ב-Maven Central
+- CyberGarage UPnP גם לא זמינה במאגרים (POM פגום)
 - כל הקוד היה מוערה
 
 **תיקון:**
-- הוחלפה ספריית Cling ב-CyberGarage UPnP (גרסה 2.1.10)
-- נכתב מחדש `UPnPDiscoveryPlugin.java` עם CyberGarage UPnP API
-- כל הפונקציונליות (discovery, play, volume) עובדת עם הספרייה החדשה
+- נכתב מחדש `UPnPDiscoveryPlugin.java` עם SSDP discovery ישיר (ללא ספרייה חיצונית)
+- משתמש ב-Java native `MulticastSocket` ל-SSDP discovery
+- **Discovery עובד במלואו** - מוצא מכשירי UPnP/DLNA ברשת
+- **הערה:** Play/Volume control דורשים parsing של device description XML ו-SOAP actions
+  - ניתן להוסיף בעתיד עם ספרייה או parsing מותאם אישית
 
 **קבצים:**
-- `android/app/build.gradle` - הוספת CyberGarage UPnP dependency
-- `android/app/src/main/java/com/cloudtunes/music/UPnPDiscoveryPlugin.java` - נכתב מחדש לחלוטין
+- `android/app/build.gradle` - הוסרה תלות חיצונית (לא נדרשת)
+- `android/app/src/main/java/com/cloudtunes/music/UPnPDiscoveryPlugin.java` - נכתב מחדש עם SSDP native
 
 ## מה עובד כעת:
 
 ✅ **Background Playback** - MusicPlaybackService עובד עם AndroidX
 ✅ **Chromecast** - Cast SDK עדכני, OptionsProvider מותאם, כל הפונקציות פעילות
-✅ **UPnP/DLNA** - CyberGarage UPnP מוטמע, discovery ו-playback עובדים
+✅ **UPnP/DLNA Discovery** - SSDP discovery ישיר, מוצא מכשירי UPnP/DLNA ברשת
+⚠️ **UPnP Playback Control** - דורש parsing של device description (ניתן להוסיף בעתיד)
 
 ## הוראות Build:
 

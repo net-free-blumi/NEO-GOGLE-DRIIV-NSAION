@@ -57,9 +57,9 @@ dependencies {
     // Google Cast SDK (Chromecast) - חינמי - גרסה עדכנית
     implementation 'com.google.android.gms:play-services-cast-framework:21.5.0'
 
-    // UPnP/DLNA Discovery - CyberGarage UPnP library (חינמי, חלופה ל-Cling)
-    // CyberGarage UPnP is a modern, actively maintained UPnP library
-    implementation 'org.cybergarage:cybergarage-upnp-core:2.1.10'
+    // UPnP/DLNA Discovery - נשתמש ב-SSDP discovery ישיר ללא ספרייה חיצונית
+    // הערה: CyberGarage UPnP לא זמינה במאגרים, אז נשתמש ב-SSDP discovery ישיר
+    // implementation 'org.cybergarage:cybergarage-upnp-core:2.1.10' // לא זמין במאגרים
 
     // Media Session for background playback
     implementation 'androidx.media:media:1.7.0'

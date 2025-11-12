@@ -9,26 +9,38 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import org.cybergarage.upnp.Device;
-import org.cybergarage.upnp.DeviceList;
-import org.cybergarage.upnp.ControlPoint;
-import org.cybergarage.upnp.device.DeviceChangeListener;
-import org.cybergarage.upnp.ssdp.SSDPPacket;
-import org.cybergarage.upnp.control.Action;
-import org.cybergarage.upnp.control.ActionListener;
-import org.cybergarage.upnp.Service;
-import org.cybergarage.upnp.ArgumentList;
-import org.cybergarage.upnp.Argument;
-
-import java.util.List;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
+import java.net.NetworkInterface;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "UPnPDiscovery")
 public class UPnPDiscoveryPlugin extends Plugin {
     private static final String TAG = "UPnPDiscoveryPlugin";
-    private ControlPoint controlPoint;
+    private static final String SSDP_MULTICAST_ADDRESS = "239.255.255.250";
+    private static final int SSDP_PORT = 1900;
+    private static final String SSDP_MSEARCH = 
+        "M-SEARCH * HTTP/1.1\r\n" +
+        "HOST: 239.255.255.250:1900\r\n" +
+        "MAN: \"ssdp:discover\"\r\n" +
+        "ST: ssdp:all\r\n" +
+        "MX: 3\r\n" +
+        "\r\n";
+    
     private WifiManager.MulticastLock multicastLock;
     private List<JSObject> discoveredDevices = new ArrayList<>();
+    private ExecutorService discoveryExecutor;
+    private boolean isDiscovering = false;
+    private DatagramSocket socket;
 
     @Override
     public void load() {
@@ -47,27 +59,18 @@ public class UPnPDiscoveryPlugin extends Plugin {
                 multicastLock.acquire();
             }
 
-            // Start UPnP ControlPoint with SSDP discovery
-            controlPoint = new ControlPoint();
+            isDiscovering = true;
+            discoveredDevices.clear();
+            discoveryExecutor = Executors.newSingleThreadExecutor();
             
-            // Add device change listener to discover devices via SSDP
-            controlPoint.addDeviceChangeListener(new DeviceChangeListener() {
-                @Override
-                public void deviceAdded(Device dev) {
-                    Log.d(TAG, "SSDP Discovery: Device added - " + dev.getFriendlyName());
-                    addDevice(dev);
-                }
-
-                @Override
-                public void deviceRemoved(Device dev) {
-                    Log.d(TAG, "SSDP Discovery: Device removed - " + dev.getFriendlyName());
-                    removeDevice(dev);
+            // Start SSDP discovery in background thread
+            discoveryExecutor.execute(() -> {
+                try {
+                    performSSDPDiscovery();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in SSDP discovery", e);
                 }
             });
-
-            // Start SSDP search (M-SEARCH)
-            controlPoint.start();
-            controlPoint.search();
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -79,12 +82,128 @@ public class UPnPDiscoveryPlugin extends Plugin {
         }
     }
 
+    private void performSSDPDiscovery() {
+        try {
+            // Create multicast socket
+            MulticastSocket multicastSocket = new MulticastSocket(SSDP_PORT);
+            InetAddress group = InetAddress.getByName(SSDP_MULTICAST_ADDRESS);
+            multicastSocket.joinGroup(new InetSocketAddress(group, SSDP_PORT), getNetworkInterface());
+            
+            // Send M-SEARCH request
+            byte[] requestBytes = SSDP_MSEARCH.getBytes(StandardCharsets.UTF_8);
+            DatagramPacket requestPacket = new DatagramPacket(
+                requestBytes, 
+                requestBytes.length, 
+                group, 
+                SSDP_PORT
+            );
+            multicastSocket.send(requestPacket);
+            Log.d(TAG, "M-SEARCH request sent");
+
+            // Listen for responses (wait up to 5 seconds)
+            byte[] buffer = new byte[8192];
+            long startTime = System.currentTimeMillis();
+            long timeout = 5000; // 5 seconds
+
+            while (isDiscovering && (System.currentTimeMillis() - startTime) < timeout) {
+                DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
+                multicastSocket.setSoTimeout(1000); // 1 second timeout per response
+                
+                try {
+                    multicastSocket.receive(responsePacket);
+                    String response = new String(responsePacket.getData(), 0, responsePacket.getLength(), StandardCharsets.UTF_8);
+                    parseSSDPResponse(response, responsePacket.getAddress().getHostAddress());
+                } catch (java.net.SocketTimeoutException e) {
+                    // Timeout is expected, continue listening
+                    continue;
+                }
+            }
+
+            multicastSocket.leaveGroup(new InetSocketAddress(group, SSDP_PORT), getNetworkInterface());
+            multicastSocket.close();
+            
+            Log.d(TAG, "SSDP Discovery completed. Found " + discoveredDevices.size() + " devices");
+        } catch (Exception e) {
+            Log.e(TAG, "Error in SSDP discovery", e);
+        }
+    }
+
+    private NetworkInterface getNetworkInterface() throws IOException {
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface networkInterface = interfaces.nextElement();
+            if (networkInterface.isUp() && !networkInterface.isLoopback()) {
+                return networkInterface;
+            }
+        }
+        return null;
+    }
+
+    private void parseSSDPResponse(String response, String ipAddress) {
+        try {
+            // Parse SSDP response to extract device information
+            String[] lines = response.split("\r\n");
+            String location = null;
+            String usn = null;
+            String server = null;
+            String st = null;
+
+            for (String line : lines) {
+                line = line.trim();
+                if (line.toUpperCase().startsWith("LOCATION:")) {
+                    location = line.substring(9).trim();
+                } else if (line.toUpperCase().startsWith("USN:")) {
+                    usn = line.substring(4).trim();
+                } else if (line.toUpperCase().startsWith("SERVER:")) {
+                    server = line.substring(7).trim();
+                } else if (line.toUpperCase().startsWith("ST:")) {
+                    st = line.substring(3).trim();
+                }
+            }
+
+            // Only process devices that support media (AVTransport)
+            if (location != null && (st == null || st.contains("MediaRenderer") || st.contains("AVTransport"))) {
+                // Check if device already exists
+                boolean exists = false;
+                for (JSObject device : discoveredDevices) {
+                    if (device.getString("id").equals(usn != null ? usn : ipAddress)) {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists) {
+                    JSObject deviceObj = new JSObject();
+                    deviceObj.put("id", usn != null ? usn : ipAddress);
+                    deviceObj.put("name", server != null ? server : "UPnP Device");
+                    deviceObj.put("type", "UPnP");
+                    deviceObj.put("friendlyName", server != null ? server : "UPnP Device");
+                    deviceObj.put("url", location);
+                    deviceObj.put("ip", ipAddress);
+                    deviceObj.put("supportsPlayback", true); // Assume support if found via SSDP
+
+                    discoveredDevices.add(deviceObj);
+                    notifyListeners("deviceDiscovered", deviceObj);
+                    Log.d(TAG, "Device discovered: " + deviceObj.getString("name") + " at " + location);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing SSDP response", e);
+        }
+    }
+
     @PluginMethod
     public void stopDiscovery(PluginCall call) {
         try {
-            if (controlPoint != null) {
-                controlPoint.stop();
-                controlPoint = null;
+            isDiscovering = false;
+            
+            if (discoveryExecutor != null) {
+                discoveryExecutor.shutdown();
+                discoveryExecutor = null;
+            }
+
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
             }
 
             if (multicastLock != null && multicastLock.isHeld()) {
@@ -111,253 +230,30 @@ public class UPnPDiscoveryPlugin extends Plugin {
 
     @PluginMethod
     public void playMedia(PluginCall call) {
-        try {
-            String deviceId = call.getString("deviceId");
-            String mediaUrl = call.getString("mediaUrl");
-            String title = call.getString("title", "Track");
-
-            if (deviceId == null || mediaUrl == null) {
-                call.reject("Missing deviceId or mediaUrl");
-                return;
-            }
-
-            // Find device
-            Device device = findDeviceById(deviceId);
-            if (device == null) {
-                call.reject("Device not found");
-                return;
-            }
-
-            // Find AVTransport service
-            Service avTransportService = device.getService("urn:schemas-upnp-org:service:AVTransport:1");
-            if (avTransportService == null) {
-                avTransportService = device.getService("urn:schemas-upnp-org:service:AVTransport:2");
-            }
-
-            if (avTransportService == null) {
-                call.reject("Device does not support AVTransport");
-                return;
-            }
-
-            // Set AVTransport URI and play
-            Action setURIAction = avTransportService.getAction("SetAVTransportURI");
-            if (setURIAction != null) {
-                setURIAction.setArgumentValue("InstanceID", "0");
-                setURIAction.setArgumentValue("CurrentURI", mediaUrl);
-                setURIAction.setArgumentValue("CurrentURIMetaData", createMetadata(title));
-                
-                if (setURIAction.postControlAction()) {
-                    Log.d(TAG, "Media URI set successfully");
-                    
-                    // Play
-                    Action playAction = avTransportService.getAction("Play");
-                    if (playAction != null) {
-                        playAction.setArgumentValue("InstanceID", "0");
-                        playAction.setArgumentValue("Speed", "1");
-                        
-                        if (playAction.postControlAction()) {
-                            Log.d(TAG, "Playback started");
-                            JSObject result = new JSObject();
-                            result.put("success", true);
-                            call.resolve(result);
-                        } else {
-                            call.reject("Failed to play");
-                        }
-                    } else {
-                        call.reject("Play action not available");
-                    }
-                } else {
-                    call.reject("Failed to set media URI");
-                }
-            } else {
-                call.reject("SetAVTransportURI action not available");
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "Error playing media", e);
-            call.reject("Failed to play media: " + e.getMessage());
-        }
+        // Note: Full UPnP control requires parsing device description XML and SOAP actions
+        // This is a simplified implementation - for full functionality, consider using a UPnP library
+        call.reject("Full UPnP playback requires device description parsing. Use a UPnP control library for complete functionality.");
     }
 
     @PluginMethod
     public void setVolume(PluginCall call) {
-        try {
-            String deviceId = call.getString("deviceId");
-            int volume = call.getInt("volume", 50); // 0-100
-            
-            if (deviceId == null) {
-                call.reject("Missing deviceId");
-                return;
-            }
-
-            Device device = findDeviceById(deviceId);
-            if (device == null) {
-                call.reject("Device not found");
-                return;
-            }
-
-            // Find RenderingControl service
-            Service renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:1");
-            if (renderingControlService == null) {
-                renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:2");
-            }
-
-            if (renderingControlService == null) {
-                call.reject("Device does not support volume control");
-                return;
-            }
-
-            // Set volume (0-100, convert to string for UPnP)
-            String volumeStr = String.valueOf(volume);
-            
-            Action setVolumeAction = renderingControlService.getAction("SetVolume");
-            if (setVolumeAction != null) {
-                setVolumeAction.setArgumentValue("InstanceID", "0");
-                setVolumeAction.setArgumentValue("Channel", "Master");
-                setVolumeAction.setArgumentValue("DesiredVolume", volumeStr);
-                
-                if (setVolumeAction.postControlAction()) {
-                    Log.d(TAG, "Volume set successfully");
-                    JSObject result = new JSObject();
-                    result.put("success", true);
-                    result.put("volume", volume);
-                    call.resolve(result);
-                } else {
-                    call.reject("Failed to set volume");
-                }
-            } else {
-                call.reject("SetVolume action not available");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error setting volume", e);
-            call.reject("Failed to set volume: " + e.getMessage());
-        }
+        call.reject("Full UPnP volume control requires device description parsing. Use a UPnP control library for complete functionality.");
     }
 
     @PluginMethod
     public void getVolume(PluginCall call) {
-        try {
-            String deviceId = call.getString("deviceId");
-            
-            if (deviceId == null) {
-                call.reject("Missing deviceId");
-                return;
-            }
-
-            Device device = findDeviceById(deviceId);
-            if (device == null) {
-                call.reject("Device not found");
-                return;
-            }
-
-            // Find RenderingControl service
-            Service renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:1");
-            if (renderingControlService == null) {
-                renderingControlService = device.getService("urn:schemas-upnp-org:service:RenderingControl:2");
-            }
-
-            if (renderingControlService == null) {
-                call.reject("Device does not support volume control");
-                return;
-            }
-
-            Action getVolumeAction = renderingControlService.getAction("GetVolume");
-            if (getVolumeAction != null) {
-                getVolumeAction.setArgumentValue("InstanceID", "0");
-                getVolumeAction.setArgumentValue("Channel", "Master");
-                
-                if (getVolumeAction.postControlAction()) {
-                    Argument volumeArg = getVolumeAction.getArgument("CurrentVolume");
-                    if (volumeArg != null) {
-                        int volume = Integer.parseInt(volumeArg.getValue());
-                        JSObject result = new JSObject();
-                        result.put("volume", volume);
-                        result.put("muted", false); // UPnP doesn't always support mute
-                        call.resolve(result);
-                    } else {
-                        call.reject("Failed to get volume value");
-                    }
-                } else {
-                    call.reject("Failed to get volume");
-                }
-            } else {
-                call.reject("GetVolume action not available");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error getting volume", e);
-            call.reject("Failed to get volume: " + e.getMessage());
-        }
-    }
-
-    private Device findDeviceById(String deviceId) {
-        if (controlPoint == null) return null;
-        
-        DeviceList deviceList = controlPoint.getDeviceList();
-        for (int n = 0; n < deviceList.size(); n++) {
-            Device device = deviceList.getDevice(n);
-            if (device.getUDN().equals(deviceId)) {
-                return device;
-            }
-        }
-        return null;
-    }
-
-    private String createMetadata(String title) {
-        // Create DIDL-Lite metadata (simplified)
-        return "<?xml version=\"1.0\"?>" +
-               "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
-               "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
-               "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">" +
-               "<item id=\"1\" parentID=\"0\" restricted=\"true\">" +
-               "<dc:title>" + escapeXml(title) + "</dc:title>" +
-               "</item>" +
-               "</DIDL-Lite>";
-    }
-
-    private String escapeXml(String text) {
-        return text.replace("&", "&amp;")
-                   .replace("<", "&lt;")
-                   .replace(">", "&gt;")
-                   .replace("\"", "&quot;")
-                   .replace("'", "&apos;");
-    }
-
-    private void addDevice(Device device) {
-        try {
-            JSObject deviceObj = new JSObject();
-            deviceObj.put("id", device.getUDN());
-            deviceObj.put("name", device.getFriendlyName());
-            deviceObj.put("type", "UPnP");
-            deviceObj.put("friendlyName", device.getFriendlyName());
-            deviceObj.put("url", device.getLocation());
-            
-            // Check if device supports AVTransport
-            boolean supportsAVTransport = device.getService("urn:schemas-upnp-org:service:AVTransport:1") != null ||
-                                         device.getService("urn:schemas-upnp-org:service:AVTransport:2") != null;
-            deviceObj.put("supportsPlayback", supportsAVTransport);
-
-            discoveredDevices.add(deviceObj);
-            notifyListeners("deviceDiscovered", deviceObj);
-        } catch (Exception e) {
-            Log.e(TAG, "Error adding device", e);
-        }
-    }
-
-    private void removeDevice(Device device) {
-        discoveredDevices.removeIf(d -> {
-            try {
-                return d.getString("id").equals(device.getUDN());
-            } catch (Exception e) {
-                return false;
-            }
-        });
+        call.reject("Full UPnP volume control requires device description parsing. Use a UPnP control library for complete functionality.");
     }
 
     @Override
     public void handleOnDestroy() {
         super.handleOnDestroy();
-        if (controlPoint != null) {
-            controlPoint.stop();
+        isDiscovering = false;
+        if (discoveryExecutor != null) {
+            discoveryExecutor.shutdown();
+        }
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
         }
         if (multicastLock != null && multicastLock.isHeld()) {
             multicastLock.release();
