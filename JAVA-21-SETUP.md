@@ -21,13 +21,10 @@ C:\Program Files\Eclipse Adoptium\jdk-21.0.1.12-hotspot
 
 מצא את השורה:
 ```properties
-# org.gradle.java.home=C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.1.12-hotspot
-```
-
-הסר את ה-`#` בתחילת השורה ועדכן את הנתיב לנתיב הנכון של Java 21 שלך:
-```properties
 org.gradle.java.home=C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.9.10-hotspot
 ```
+
+הקובץ כבר מעודכן עם הנתיב הנכון! אם יש לך גרסה אחרת, עדכן את הנתיב בהתאם.
 
 **חשוב:** השתמש ב-`\\` (backslash כפול) בנתיב!
 

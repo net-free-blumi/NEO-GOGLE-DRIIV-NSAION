@@ -11,8 +11,8 @@ android {
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-            // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-            // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
@@ -62,8 +62,7 @@ dependencies {
     // implementation 'org.cybergarage:cybergarage-upnp-core:2.1.10' // לא זמין במאגרים
 
     // Media Session for background playback
-    // Note: PlaybackStateCompat is included in androidx.media:media:1.7.0
-    // It's in the androidx.media.session package
+    // androidx.media:media includes MediaSessionCompat and PlaybackStateCompat
     implementation 'androidx.media:media:1.7.0'
 
     // Network discovery support

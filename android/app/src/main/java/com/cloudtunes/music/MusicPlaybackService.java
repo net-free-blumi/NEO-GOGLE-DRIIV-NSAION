@@ -76,17 +76,17 @@ public class MusicPlaybackService extends Service {
                     case "PREVIOUS":
                         previous();
                         break;
-                }
+    }
             }
         }
         return START_STICKY;
     }
-    
+
     @Override
     public IBinder onBind(Intent intent) {
         return binder;
     }
-    
+
     @Override
     public void onDestroy() {
         super.onDestroy();
