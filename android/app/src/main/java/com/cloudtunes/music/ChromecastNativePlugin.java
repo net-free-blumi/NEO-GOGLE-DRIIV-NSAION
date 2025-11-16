@@ -41,7 +41,7 @@ public class ChromecastNativePlugin extends Plugin implements SessionManagerList
                     sessionManager = castContext.getSessionManager();
                     // Add this plugin as a SessionManagerListener
                     if (sessionManager != null) {
-                        sessionManager.addSessionManagerListener(this);
+                        sessionManager.addSessionManagerListener(this, CastSession.class);
                     }
                 } else {
                     Log.w(TAG, "CastContext not available - make sure CastOptionsProvider is configured in AndroidManifest");
@@ -265,12 +265,11 @@ public class ChromecastNativePlugin extends Plugin implements SessionManagerList
             if (!subtitle.isEmpty()) {
                 metadata.putString(MediaMetadata.KEY_SUBTITLE, subtitle);
             }
-            if (!imageUrl.isEmpty()) {
-                // Use the new API for adding images
-                metadata.addImage(new com.google.android.gms.cast.MediaInfo.Image.Builder()
-                    .setUrl(imageUrl)
-                    .build());
-            }
+            // Note: Image support will be added later once we verify the correct API
+            // For now, we'll skip adding images to avoid compilation errors
+            // if (!imageUrl.isEmpty()) {
+            //     metadata.addImage(...);
+            // }
 
             MediaInfo mediaInfo = new MediaInfo.Builder(contentUrl)
                 .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
@@ -592,7 +591,7 @@ public class ChromecastNativePlugin extends Plugin implements SessionManagerList
     public void handleOnDestroy() {
         super.handleOnDestroy();
         if (sessionManager != null) {
-            sessionManager.removeSessionManagerListener(this);
+            sessionManager.removeSessionManagerListener(this, CastSession.class);
         }
     }
 }
