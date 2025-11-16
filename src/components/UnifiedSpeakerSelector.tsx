@@ -710,10 +710,7 @@ const UnifiedSpeakerSelector = ({
       sessionStorage.setItem('available_speakers', JSON.stringify(speakers));
       
       onSpeakerChange(speakerId);
-      toast({
-        title: "רמקול מחובר",
-        description: `מנגן כעת ב-${speaker.name}`,
-      });
+      // Removed toast notification - user doesn't need confirmation when connecting to speaker
     } catch (error: any) {
       console.error('Error connecting to speaker:', error);
       toast({
@@ -843,10 +840,7 @@ const UnifiedSpeakerSelector = ({
         throw new Error(error.message || 'לא ניתן לשדר ל-DLNA');
       }
 
-      toast({
-        title: "שידור ל-DLNA",
-        description: `משדר "${title}" ל-${speaker.name}`,
-      });
+      // Removed toast notification - user doesn't need confirmation when casting to DLNA
     } catch (error: any) {
       throw new Error(error.message || "לא ניתן לשדר ל-DLNA");
     }
@@ -886,10 +880,7 @@ const UnifiedSpeakerSelector = ({
           });
           
           if (device) {
-            toast({
-              title: "Bluetooth מחובר",
-              description: `מחובר ל-${device.name || 'Bluetooth Device'}`,
-            });
+            // Removed toast notification - user doesn't need confirmation when connecting to Bluetooth
             // Note: Web Bluetooth API doesn't directly route audio
             // The user still needs to select the device in OS settings
             // But we've established the connection
@@ -911,10 +902,7 @@ const UnifiedSpeakerSelector = ({
       } else {
         // Bluetooth audio routing is handled by the OS
         // The user needs to select the Bluetooth device in their OS settings
-        toast({
-          title: "Bluetooth",
-          description: "בחר רמקול Bluetooth בהגדרות המכשיר או במערכת ההפעלה",
-        });
+        // Removed toast notification - user doesn't need instructions
       }
     } catch (error: any) {
       // Re-throw to be handled by the caller
@@ -979,11 +967,8 @@ const UnifiedSpeakerSelector = ({
             size="sm"
             onClick={async (e) => {
               e.stopPropagation();
-              const count = await discoverSpeakers();
-              toast({
-                title: "סריקה הושלמה",
-                description: `נמצאו ${count} רמקולים`,
-              });
+              await discoverSpeakers();
+              // Removed toast notification - user doesn't need to see how many speakers were found
             }}
             className="h-6 px-2"
             disabled={isScanning}

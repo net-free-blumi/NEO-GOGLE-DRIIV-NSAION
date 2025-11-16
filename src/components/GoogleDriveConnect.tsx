@@ -457,11 +457,42 @@ const GoogleDriveConnect = ({ onSongsLoaded }: GoogleDriveConnectProps) => {
     checkStoredAuth();
   }, [onSongsLoaded]);
 
+  const waitForGoogleIdentityServices = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      // Check if already loaded
+      if ((window as any).google?.accounts?.oauth2) {
+        resolve();
+        return;
+      }
+      
+      // Wait for script to load (max 10 seconds)
+      let attempts = 0;
+      const maxAttempts = 100; // 10 seconds with 100ms intervals
+      
+      const checkInterval = setInterval(() => {
+        attempts++;
+        if ((window as any).google?.accounts?.oauth2) {
+          clearInterval(checkInterval);
+          resolve();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          reject(new Error("Google Identity Services failed to load after 10 seconds"));
+        }
+      }, 100);
+    });
+  };
+
   const handleConnect = async () => {
     setIsConnecting(true);
     try {
       if (!GOOGLE_CLIENT_ID) throw new Error("Missing VITE_GOOGLE_CLIENT_ID in environment");
-      if (!(window as any).google?.accounts?.oauth2) throw new Error("Google Identity Services not loaded");
+      
+      // Wait for Google Identity Services to load
+      await waitForGoogleIdentityServices();
+      
+      if (!(window as any).google?.accounts?.oauth2) {
+        throw new Error("Google Identity Services not loaded");
+      }
 
       const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
