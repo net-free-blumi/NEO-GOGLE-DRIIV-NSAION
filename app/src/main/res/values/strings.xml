@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Music Player</string>
+    <string name="login_with_google">התחבר עם Google</string>
+    <string name="loading">טוען...</string>
+    <string name="songs">שירים</string>
+    <string name="playlists">פלייליסטים</string>
+    <string name="now_playing">מנגן כעת</string>
+    <string name="play">נגן</string>
+    <string name="pause">השהה</string>
+    <string name="next">הבא</string>
+    <string name="previous">הקודם</string>
+    <string name="no_songs">אין שירים</string>
+    <string name="error_loading_songs">שגיאה בטעינת שירים</string>
+    <string name="disconnected">מנותק</string>
+    <string name="connected">מחובר</string>
+</resources>
+

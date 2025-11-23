@@ -1,122 +1,74 @@
-# CloudTunes – Google Drive Music Player
+# Music Player - Android App
 
-React + Vite app to browse your Google Drive audio and stream securely via a local Node proxy. Includes HTML5 Audio player (auto-next/shuffle/repeat), Chromecast sender, UPnP/DLNA support, and Android APK support.
+אפליקציית מוזיקה לאנדרואיד שמתחברת ל-Google Drive ומנגנת קבצי מוזיקה ישירות משם.
 
-## ✨ Features
+## 🎯 תכונות
 
-- 🎵 **Google Drive Integration** - Stream music directly from your Google Drive
-- 📱 **Android APK** - Native Android app with full functionality
-- 🎯 **UPnP/DLNA Support** - Discover and cast to UPnP/DLNA devices (like BubbleUPnP)
-- 📺 **Chromecast Support** - Auto-connect and cast to Chromecast/Google Nest devices
-- 🎧 **Background Playback** - Play music in background with media controls
-- 🔊 **Volume Control** - Full volume control for Chromecast and UPnP devices
-- 📊 **Status Updates** - Real-time playback status and metadata
+- ✅ אימות Google Drive עם OAuth2 + Token Refresh
+- ✅ סטרימינג מוזיקה ישירות מ-Google Drive (ללא הורדה)
+- ✅ תמיכה ב-Chromecast ו-Bluetooth (בפיתוח)
+- ✅ ממשק משתמש מודרני עם Jetpack Compose
+- ✅ ארכיטקטורה MVVM נקייה
+- ✅ נגינה ברקע (Background Playback)
+- ✅ תורים ופלייליסטים
 
-## 📋 Prerequisites
+## 🏗️ ארכיטקטורה
 
-- Node.js 18+
-- Google Cloud project with Drive API enabled (free)
-- Android Studio (for building APK - free)
-
-## 🔧 Environment Setup
-
-Create `.env.local` in repo root:
-
-```env
-VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
-VITE_REDIRECT_URI=http://localhost:3000/google-callback
-VITE_GDRIVE_FOLDER_ID=your-folder-id
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-supabase-key
+```
+app/
+├── src/
+│   ├── main/
+│   │   ├── java/com/cloudtunes/music/
+│   │   │   ├── ui/              # Jetpack Compose UI
+│   │   │   ├── viewmodel/       # MVVM ViewModels
+│   │   │   ├── data/
+│   │   │   │   ├── google/       # Google Drive API
+│   │   │   │   ├── auth/         # OAuth2 Authentication
+│   │   │   │   └── preferences/  # DataStore
+│   │   │   ├── player/          # Media Player
+│   │   │   ├── repository/       # Data repositories
+│   │   │   └── di/              # Dependency Injection
+│   │   └── res/                 # Resources
+│   └── test/
+└── build.gradle
 ```
 
-## 🚀 Install & Run (dev)
+## 🚀 התקנה
+
+1. פתח את הפרויקט ב-Android Studio
+2. הוסף `google-services.json` (אם נדרש)
+3. הגדר OAuth2 credentials ב-Google Cloud Console
+4. עדכן את `app/src/main/res/values/credentials.xml` עם:
+   - Google Client ID
+   - Google Client Secret
+   - Google Drive Folder ID
+5. בנה את הפרויקט
+
+## 📦 טכנולוגיות
+
+- **Kotlin** - שפת התכנות
+- **Jetpack Compose** - UI מודרני
+- **MVVM** - ארכיטקטורה
+- **Google Drive API** - גישה לקבצים
+- **Media3** - נגן מוזיקה
+- **Cast SDK** - תמיכה ב-Chromecast
+- **Hilt** - Dependency Injection
+
+## 🔧 Build
 
 ```bash
-npm install
-npm run dev:all
+./gradlew assembleDebug
 ```
 
-Open in Chrome at `http://<YOUR_LAN_IP>:3000` (for Chromecast). For desktop playback only, `http://localhost:3000` also works.
+## 📝 תיעוד
 
-## 📱 Building Android APK
+- `SETUP.md` - הוראות התקנה מפורטות
+- `ARCHITECTURE.md` - תיעוד ארכיטקטורה
+- `CREDENTIALS_SETUP.md` - הגדרת Credentials
+- `NEXT_STEPS.md` - צעדים הבאים
+- `IMPLEMENTATION_NOTES.md` - הערות יישום
 
-See [ANDROID-BUILD-GUIDE.md](./ANDROID-BUILD-GUIDE.md) for complete instructions.
+## 📝 רישיון
 
-Quick steps:
-```bash
-npm run build
-npm run cap:sync
-npm run cap:android
-```
+Private project
 
-Then build APK in Android Studio: **Build** → **Build APK(s)**
-
-## 🔐 Google Setup (Hebrew)
-
-1. היכנס ל-`https://console.cloud.google.com/`, צור פרויקט חדש (חינמי).
-2. הפעל Google Drive API: APIs & Services → Library → "Google Drive API" → Enable (חינמי).
-3. OAuth consent screen: External → הוסף את המייל שלך כ-Test user → Save.
-4. Credentials → Create OAuth client ID (Web) → Authorized redirect URIs: `http://localhost:3000/google-callback` → Create.
-5. העתק את ה-Client ID לתוך `.env.local`.
-
-**חשוב**: כל זה חינמי לחלוטין! Google Drive API ו-OAuth הם חינמיים.
-
-## 📖 Usage
-
-### Web Version:
-1. פתח `http://<YOUR_LAN_IP>:3000` בכרום.
-2. לחץ "Login with Google", אשר הרשאות Drive read-only.
-3. יוצגו שירי אודיו מה-Drive. בחר שיר לניגון. Auto-next פעיל.
-4. לכפתור Cast: ודא שהרמקול/Chromecast באותה רשת.
-
-### Android APK:
-1. התקן את ה-APK על מכשיר Android
-2. פתח את האפליקציה
-3. התחבר ל-Google Drive
-4. בחר רמקול (UPnP/DLNA או Chromecast)
-5. נגן שירים ישירות מ-Google Drive
-
-## 🎯 Supported Devices
-
-- **Chromecast** / **Google Nest** - Auto-connect, full control
-- **UPnP/DLNA Devices** - Auto-discovery, full control
-- **AirPlay** (Safari only) - Basic support
-- **Bluetooth** - Basic support
-
-## 🔌 Plugins Used (All Free!)
-
-### UPnP/DLNA Discovery
-- **Library**: Cling (org.fourthline.cling) - Free & Open Source
-- **Link**: https://github.com/4thline/cling
-- **Features**: SSDP discovery, AVTransport, RenderingControl
-
-### Chromecast
-- **SDK**: Google Cast SDK (com.google.android.gms:play-services-cast-framework) - Free
-- **Link**: https://developers.google.com/cast/docs/android_sender
-- **Features**: Auto-connect, device discovery, full control
-
-### Background Playback
-- **API**: Android MediaSession API - Built-in Android
-- **Features**: Foreground service, media controls, metadata
-
-## 📝 Notes
-
-- הזרמה מתבצעת דרך `server/index.ts` עם תמיכת Range. בכרום יש לגשת דרך IP מקומי שהרמקול יכול להגיע אליו.
-- אין סודות בקוד; Client ID נטען מ-`.env.local`.
-- הכל חינמי - אין צורך לשלם כלום!
-
-## 🐛 Troubleshooting
-
-See [ANDROID-BUILD-GUIDE.md](./ANDROID-BUILD-GUIDE.md) for detailed troubleshooting guide.
-
-## 📚 Documentation
-
-- [Android Build Guide](./ANDROID-BUILD-GUIDE.md) - Complete APK building instructions
-- [Capacitor Documentation](https://capacitorjs.com/docs)
-- [Google Cast SDK](https://developers.google.com/cast/docs/android_sender)
-- [Cling UPnP Library](https://github.com/4thline/cling)
-
-## 📄 License
-
-Free to use - all libraries and SDKs are free/open source.
