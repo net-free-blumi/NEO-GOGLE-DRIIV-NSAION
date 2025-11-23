@@ -37,3 +37,7 @@ local.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Node modules (should not be committed)
+node_modules/
+.env
