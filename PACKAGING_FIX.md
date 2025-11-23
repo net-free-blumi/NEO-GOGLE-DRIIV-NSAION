@@ -14,7 +14,8 @@ ERROR: 2 files found with path 'META-INF/INDEX.LIST'
 packaging {
     resources {
         excludes += '/META-INF/{AL2.0,LGPL2.1}'
-        excludes += '/META-INF/INDEX.LIST'  // <--- נוסף
+        excludes += '/META-INF/INDEX.LIST'
+        excludes += '/META-INF/DEPENDENCIES'
     }
 }
 ```
