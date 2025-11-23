@@ -7,6 +7,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.cloudtunes.music.R
 import com.cloudtunes.music.data.auth.AuthRepository
 import com.cloudtunes.music.data.google.SongMetadata
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +20,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class MusicPlayer @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val authRepository: AuthRepository
 ) {
     var exoPlayer: ExoPlayer? = null
