@@ -8,11 +8,13 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.google.api.client.auth.oauth2.Credential
 import com.google.api.client.auth.oauth2.TokenResponse
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.http.UrlEncodedContent
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.DriveScopes
 import kotlinx.coroutines.flow.Flow
@@ -80,7 +82,7 @@ class AuthRepository @Inject constructor(
             .requestEmail()
             .requestProfile()
             .requestScopes(
-                com.google.android.gms.common.Scope(DriveScopes.DRIVE_READONLY)
+                Scope(DriveScopes.DRIVE_READONLY)
             )
             .build()
         
@@ -99,22 +101,27 @@ class AuthRepository @Inject constructor(
             val transport = NetHttpTransport()
             val jsonFactory = GsonFactory.getDefaultInstance()
 
-            val tokenResponse = TokenResponse()
-            tokenResponse.set("code", authorizationCode)
-            tokenResponse.set("client_id", clientId)
-            tokenResponse.set("client_secret", clientSecret)
-            tokenResponse.set("redirect_uri", REDIRECT_URI)
-            tokenResponse.set("grant_type", "authorization_code")
+            val requestData = mapOf(
+                "code" to authorizationCode,
+                "client_id" to clientId,
+                "client_secret" to clientSecret,
+                "redirect_uri" to REDIRECT_URI,
+                "grant_type" to "authorization_code"
+            )
 
             // Exchange authorization code for tokens
             val tokenRequest = transport.createRequestFactory()
                 .buildPostRequest(
                     com.google.api.client.http.GenericUrl("https://oauth2.googleapis.com/token"),
-                    tokenResponse
+                    UrlEncodedContent(requestData)
                 )
             
             val response = tokenRequest.execute()
-            val tokenData = response.parseAs(TokenResponse::class.java)
+            val tokenResponse = response.parseAs(TokenResponse::class.java)
+            
+            if (tokenResponse.accessToken == null) {
+                throw IllegalStateException("Failed to get access token from OAuth response")
+            }
 
             // Create credential
             val credential = Credential.Builder(
@@ -133,16 +140,17 @@ class AuthRepository @Inject constructor(
                 )
                 .build()
 
-            credential.setAccessToken(tokenData.accessToken)
-            credential.setRefreshToken(tokenData.refreshToken)
+            credential.setAccessToken(tokenResponse.accessToken)
+            credential.setRefreshToken(tokenResponse.refreshToken)
+            val expiresIn = tokenResponse.expiresInSeconds ?: 3600L
             credential.expirationTimeMilliseconds = 
-                System.currentTimeMillis() + (tokenData.expiresInSeconds * 1000)
+                System.currentTimeMillis() + (expiresIn * 1000)
 
             // Store tokens
             authPreferences.saveTokens(
-                accessToken = tokenData.accessToken,
-                refreshToken = tokenData.refreshToken,
-                expiresIn = tokenData.expiresInSeconds
+                accessToken = tokenResponse.accessToken,
+                refreshToken = tokenResponse.refreshToken ?: "",
+                expiresIn = expiresIn
             )
 
             _currentCredential.value = credential
@@ -162,10 +170,10 @@ class AuthRepository @Inject constructor(
     suspend fun getCredential(clientId: String, clientSecret: String): Credential? {
         val credential = _currentCredential.value
         
-        if (credential != null && credential.refreshToken != null) {
+            if (credential != null && credential.refreshToken != null) {
             // Check if token needs refresh
-            if (credential.expiresTimeMilliseconds != null &&
-                credential.expiresTimeMilliseconds!! < System.currentTimeMillis() + 60000) {
+            if (credential.expirationTimeMilliseconds != null &&
+                credential.expirationTimeMilliseconds!! < System.currentTimeMillis() + 60000) {
                 // Token expires in less than 1 minute, refresh it
                 refreshToken(clientId, clientSecret)?.let {
                     return it
@@ -193,20 +201,25 @@ class AuthRepository @Inject constructor(
             val transport = NetHttpTransport()
             val jsonFactory = GsonFactory.getDefaultInstance()
 
-            val tokenResponse = TokenResponse()
-            tokenResponse.set("refresh_token", refreshToken)
-            tokenResponse.set("client_id", clientId)
-            tokenResponse.set("client_secret", clientSecret)
-            tokenResponse.set("grant_type", "refresh_token")
+            val requestData = mapOf(
+                "refresh_token" to refreshToken,
+                "client_id" to clientId,
+                "client_secret" to clientSecret,
+                "grant_type" to "refresh_token"
+            )
 
             val tokenRequest = transport.createRequestFactory()
                 .buildPostRequest(
                     com.google.api.client.http.GenericUrl("https://oauth2.googleapis.com/token"),
-                    tokenResponse
+                    UrlEncodedContent(requestData)
                 )
             
             val response = tokenRequest.execute()
-            val tokenData = response.parseAs(TokenResponse::class.java)
+            val tokenResponse = response.parseAs(TokenResponse::class.java)
+            
+            if (tokenResponse.accessToken == null) {
+                throw IllegalStateException("Failed to refresh access token")
+            }
 
             // Update credential
             val credential = _currentCredential.value ?: run {
@@ -229,12 +242,13 @@ class AuthRepository @Inject constructor(
                 newCredential
             }
 
-            credential.setAccessToken(tokenData.accessToken)
+            credential.setAccessToken(tokenResponse.accessToken)
+            val expiresIn = tokenResponse.expiresInSeconds ?: 3600L
             credential.expirationTimeMilliseconds = 
-                System.currentTimeMillis() + (tokenData.expiresInSeconds * 1000)
+                System.currentTimeMillis() + (expiresIn * 1000)
 
             // Update stored access token
-            authPreferences.saveAccessToken(tokenData.accessToken, tokenData.expiresInSeconds)
+            authPreferences.saveAccessToken(tokenResponse.accessToken, expiresIn)
 
             _currentCredential.value = credential
 
@@ -251,7 +265,7 @@ class AuthRepository @Inject constructor(
     /**
      * Restore credential from stored tokens
      */
-    private fun restoreCredential() {
+    private suspend fun restoreCredential() {
         val accessToken = authPreferences.getAccessToken()
         val refreshToken = authPreferences.getRefreshToken()
         
