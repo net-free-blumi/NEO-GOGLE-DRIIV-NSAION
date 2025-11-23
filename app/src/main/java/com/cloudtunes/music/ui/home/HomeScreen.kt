@@ -12,6 +12,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 /**
  * Home screen - displays songs and player controls
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
