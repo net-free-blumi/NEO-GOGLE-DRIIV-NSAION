@@ -56,7 +56,7 @@ export default function MusicPlayer({
         onNext()
       }
     }
-    const handleError = (e: any) => {
+    const handleError = () => {
       const errorCode = audio.error?.code
       let errorMessage = 'שגיאה בטעינת השיר'
       
@@ -149,7 +149,7 @@ export default function MusicPlayer({
       const handleCanPlay = () => {
         log('Audio can play', 'info')
       }
-      const handleError = (e: any) => {
+      const handleError = () => {
         const error = audio.error
         if (error) {
           log(`Audio element error: code=${error.code}, message=${error.message}`, 'error')

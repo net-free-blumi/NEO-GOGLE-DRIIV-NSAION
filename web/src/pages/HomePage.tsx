@@ -16,7 +16,6 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null)
   const [folderId, setFolderId] = useState(FOLDER_ID)
   const [showFolderInput, setShowFolderInput] = useState(false)
-  const [currentPath, setCurrentPath] = useState<string[]>([])
   const [playlist, setPlaylist] = useState<{ id: string; name: string; file: DriveFile }[]>([])
   const [currentSongIndex, setCurrentSongIndex] = useState(-1)
   const [currentSong, setCurrentSong] = useState<{ id: string; name: string; streamUrl: string } | null>(null)
