@@ -75,22 +75,37 @@ class AuthRepository @Inject constructor(
 
     /**
      * Get Google Sign-In client for OAuth2
+     * Uses serverAuthCode for proper token exchange with refresh token
      */
-    fun getGoogleSignInClient(clientId: String): GoogleSignInClient {
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(clientId)
-            .requestEmail()
-            .requestProfile()
-            .requestScopes(
-                Scope(DriveScopes.DRIVE_READONLY)
-            )
-            .build()
+    fun getGoogleSignInClient(androidClientId: String, webClientId: String? = null): GoogleSignInClient {
+        val gso = if (webClientId != null) {
+            // Use web client ID for serverAuthCode (gives refresh token)
+            GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestServerAuthCode(webClientId, true) // true = force code for refresh token
+                .requestEmail()
+                .requestProfile()
+                .requestScopes(
+                    Scope(DriveScopes.DRIVE_READONLY)
+                )
+                .build()
+        } else {
+            // Fallback to Android client ID with idToken
+            GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(androidClientId)
+                .requestEmail()
+                .requestProfile()
+                .requestScopes(
+                    Scope(DriveScopes.DRIVE_READONLY)
+                )
+                .build()
+        }
         
         return GoogleSignIn.getClient(context, gso)
     }
     
     /**
      * Handle Google Sign-In account and get access token
+     * Uses GoogleAuthUtil to get access token (requires GET_ACCOUNTS permission)
      */
     suspend fun handleGoogleSignInAccount(
         account: GoogleSignInAccount,
@@ -98,21 +113,43 @@ class AuthRepository @Inject constructor(
         clientSecret: String
     ): Result<Credential> {
         return try {
-            // Get access token using GoogleAuthUtil (deprecated but still works)
+            if (account.account == null) {
+                throw IllegalStateException("GoogleSignInAccount.account is null")
+            }
+            
+            Log.d(TAG, "Getting access token using GoogleAuthUtil...")
+            Log.d(TAG, "Account: ${account.email}, Scopes: ${account.grantedScopes}")
+            
+            // Get access token using GoogleAuthUtil
+            // This requires the account to have the Drive scope granted
             val accessToken = try {
-                com.google.android.gms.auth.GoogleAuthUtil.getToken(
-                    context,
-                    account.account!!,
-                    "oauth2:${DriveScopes.DRIVE_READONLY}"
-                )
+                val scope = "oauth2:${DriveScopes.DRIVE_READONLY}"
+                Log.d(TAG, "Requesting token for scope: $scope")
+                
+                // Use blocking call in coroutine
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.google.android.gms.auth.GoogleAuthUtil.getToken(
+                        context,
+                        account.account!!,
+                        scope
+                    )
+                }
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                Log.e(TAG, "UserRecoverableAuthException - user needs to grant permission", e)
+                throw IllegalStateException("User needs to grant Drive access permission: ${e.message}")
+            } catch (e: com.google.android.gms.auth.GoogleAuthException) {
+                Log.e(TAG, "GoogleAuthException", e)
+                throw IllegalStateException("Google authentication failed: ${e.message}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get access token from GoogleAuthUtil", e)
-                throw e
+                throw IllegalStateException("Failed to get access token: ${e.message}")
             }
             
             if (accessToken.isNullOrEmpty()) {
-                throw IllegalStateException("Failed to get access token")
+                throw IllegalStateException("Access token is empty")
             }
+            
+            Log.d(TAG, "Successfully obtained access token (length: ${accessToken.length})")
             
             val transport = NetHttpTransport()
             val jsonFactory = GsonFactory.getDefaultInstance()
@@ -153,7 +190,7 @@ class AuthRepository @Inject constructor(
             Log.d(TAG, "Authentication successful with Google Sign-In account")
             Result.success(credential)
         } catch (e: Exception) {
-            Log.e(TAG, "Google Sign-In account handling failed", e)
+            Log.e(TAG, "Google Sign-In account handling failed: ${e.message}", e)
             Result.failure(e)
         }
     }

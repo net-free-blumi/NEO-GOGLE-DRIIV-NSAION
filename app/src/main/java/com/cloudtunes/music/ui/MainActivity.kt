@@ -71,17 +71,27 @@ class MainActivity : ComponentActivity() {
                 val clientId = getString(R.string.google_client_id)
                 val clientSecret = getString(R.string.google_client_secret)
                 
-                // Try server auth code first (if available)
+                // Get web client ID if available (for serverAuthCode)
+                val webClientId: String? = try {
+                    val webClientIdResId = resources.getIdentifier("google_web_client_id", "string", packageName)
+                    if (webClientIdResId != 0) getString(webClientIdResId) else null
+                } catch (e: Exception) {
+                    null
+                }
+                
+                // Try server auth code first (if available) - this gives refresh token
                 val serverAuthCode = account.serverAuthCode
-                val result = if (serverAuthCode != null) {
+                val result = if (serverAuthCode != null && webClientId != null) {
                     // Exchange server auth code for tokens with refresh token
+                    // Use web client ID for server auth code exchange
                     authRepository.handleServerAuthCode(
                         serverAuthCode = serverAuthCode,
-                        clientId = clientId,
+                        clientId = webClientId, // Use web client ID for server auth code
                         clientSecret = clientSecret
                     )
                 } else {
                     // Fallback to GoogleAuthUtil (no refresh token)
+                    android.util.Log.w("MainActivity", "No serverAuthCode or webClientId, using fallback")
                     authRepository.handleGoogleSignInAccount(
                         account = account,
                         clientId = clientId,
@@ -90,13 +100,17 @@ class MainActivity : ComponentActivity() {
                 }
                 
                 if (result.isFailure) {
-                    android.util.Log.e("MainActivity", "Failed to authenticate", result.exceptionOrNull())
+                    val error = result.exceptionOrNull()
+                    android.util.Log.e("MainActivity", "Failed to authenticate: ${error?.message}", error)
+                    // Show error to user - you might want to add a Toast or error state here
                 } else {
                     android.util.Log.d("MainActivity", "Authentication successful")
                 }
             } catch (e: ApiException) {
                 // Sign in failed
-                android.util.Log.e("MainActivity", "Sign in failed: ${e.statusCode}", e)
+                android.util.Log.e("MainActivity", "Sign in failed: ${e.statusCode} - ${e.message}", e)
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Unexpected error during sign in", e)
             }
         }
     }

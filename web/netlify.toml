@@ -1,0 +1,16 @@
+[build]
+  # Build command for Vite
+  command = "npm run build"
+  # Output directory (Vite builds to 'dist')
+  publish = "dist"
+
+# Redirect all routes to index.html for SPA routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables (set these in Netlify dashboard)
+# VITE_GOOGLE_CLIENT_ID=your-client-id
+# VITE_GOOGLE_CLIENT_SECRET=your-client-secret
+

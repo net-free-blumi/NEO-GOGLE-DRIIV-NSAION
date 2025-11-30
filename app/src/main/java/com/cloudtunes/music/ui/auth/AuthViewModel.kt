@@ -31,6 +31,14 @@ class AuthViewModel @Inject constructor(
 
     private val clientId: String = context.getString(R.string.google_client_id)
     private val clientSecret: String = context.getString(R.string.google_client_secret)
+    
+    // Try to get web client ID if available (for serverAuthCode with refresh token)
+    private val webClientId: String? = try {
+        val webClientIdResId = context.resources.getIdentifier("google_web_client_id", "string", context.packageName)
+        if (webClientIdResId != 0) context.getString(webClientIdResId) else null
+    } catch (e: Exception) {
+        null
+    }
 
     init {
         // Check if already authenticated
@@ -54,7 +62,8 @@ class AuthViewModel @Inject constructor(
             )
 
             // Get Google Sign-In client and create intent
-            val signInClient = authRepository.getGoogleSignInClient(clientId)
+            // Use web client ID if available for serverAuthCode (gives refresh token)
+            val signInClient = authRepository.getGoogleSignInClient(clientId, webClientId)
             val signInIntent = signInClient.signInIntent
             _signInIntent.value = signInIntent
         }
