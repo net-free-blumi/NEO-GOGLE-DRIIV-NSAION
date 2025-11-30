@@ -5,7 +5,8 @@ import { log } from '../utils/logger'
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ''
-const REDIRECT_URI = window.location.origin + '/callback'
+// Redirect URI is calculated dynamically based on current origin
+const getRedirectUri = () => window.location.origin + '/callback'
 
 // Validate configuration
 if (!CLIENT_ID || !CLIENT_SECRET) {
@@ -72,7 +73,9 @@ export default function GoogleCallback() {
     try {
       log('Exchanging authorization code for tokens...', 'info')
       log(`Using Client ID: ${CLIENT_ID.substring(0, 20)}...`, 'info')
-      log(`Redirect URI: ${REDIRECT_URI}`, 'info')
+      const redirectUri = getRedirectUri()
+      log(`Redirect URI: ${redirectUri}`, 'info')
+      log(`⚠️ Make sure this redirect URI is added to Google Cloud Console!`, 'warn')
       
       const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -83,7 +86,7 @@ export default function GoogleCallback() {
           code,
           client_id: CLIENT_ID,
           client_secret: CLIENT_SECRET,
-          redirect_uri: REDIRECT_URI,
+          redirect_uri: redirectUri,
           grant_type: 'authorization_code',
         }),
       })

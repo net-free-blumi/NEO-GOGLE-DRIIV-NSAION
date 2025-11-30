@@ -13,7 +13,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ''
-const REDIRECT_URI = window.location.origin + '/callback'
+// Redirect URI is calculated dynamically based on current origin
+// This works for both localhost and production (Netlify)
+const getRedirectUri = () => window.location.origin + '/callback'
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
 
 // Validate configuration on load
@@ -160,19 +162,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     
+    // Get current origin (works for both localhost and production)
+    const redirectUri = getRedirectUri()
+    const currentOrigin = window.location.origin
+    
     log('Initiating Google OAuth login...', 'info')
     log(`Client ID: ${CLIENT_ID.substring(0, 20)}...`, 'info')
-    log(`Redirect URI: ${REDIRECT_URI}`, 'info')
+    log(`Current origin: ${currentOrigin}`, 'info')
+    log(`Redirect URI: ${redirectUri}`, 'info')
+    log(`⚠️ IMPORTANT: Make sure this redirect URI is added to Google Cloud Console!`, 'warn')
     
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${CLIENT_ID}&` +
-      `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `response_type=code&` +
       `scope=${encodeURIComponent(SCOPES)}&` +
       `access_type=offline&` +
       `prompt=consent`
     
-    log(`Redirecting to: ${authUrl.substring(0, 100)}...`, 'info')
+    log(`Full auth URL: ${authUrl}`, 'info')
+    console.log('🔍 Debug - Redirect URI being sent:', redirectUri)
+    console.log('🔍 Debug - Encoded redirect URI:', encodeURIComponent(redirectUri))
+    
     window.location.href = authUrl
   }
 
