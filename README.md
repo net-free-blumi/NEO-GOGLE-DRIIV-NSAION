@@ -48,6 +48,10 @@ npm run dev
 ```
 
 ### Android (APK)
+
+> ⚡ **לפיתוח:** מומלץ להשתמש ב-**[USB Debugging](./USB_DEBUGGING_GUIDE.md)** - עדכון קוד מיידי ללא בניית APK!
+
+ראה: **[BUILD_APK_GUIDE.md](./BUILD_APK_GUIDE.md)** - מדריך בניית APK
 ```bash
 # דרך Android Studio: Build → Build APK(s)
 # או דרך Command Line:

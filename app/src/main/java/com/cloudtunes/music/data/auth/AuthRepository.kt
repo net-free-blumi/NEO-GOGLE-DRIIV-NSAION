@@ -88,6 +88,150 @@ class AuthRepository @Inject constructor(
         
         return GoogleSignIn.getClient(context, gso)
     }
+    
+    /**
+     * Handle Google Sign-In account and get access token
+     */
+    suspend fun handleGoogleSignInAccount(
+        account: GoogleSignInAccount,
+        clientId: String,
+        clientSecret: String
+    ): Result<Credential> {
+        return try {
+            // Get access token using GoogleAuthUtil (deprecated but still works)
+            val accessToken = try {
+                com.google.android.gms.auth.GoogleAuthUtil.getToken(
+                    context,
+                    account.account!!,
+                    "oauth2:${DriveScopes.DRIVE_READONLY}"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get access token from GoogleAuthUtil", e)
+                throw e
+            }
+            
+            if (accessToken.isNullOrEmpty()) {
+                throw IllegalStateException("Failed to get access token")
+            }
+            
+            val transport = NetHttpTransport()
+            val jsonFactory = GsonFactory.getDefaultInstance()
+            
+            // Create credential with access token
+            val credential = Credential.Builder(
+                com.google.api.client.auth.oauth2.BearerToken.authorizationHeaderAccessMethod()
+            )
+                .setTransport(transport)
+                .setJsonFactory(jsonFactory)
+                .setTokenServerUrl(
+                    com.google.api.client.http.GenericUrl("https://oauth2.googleapis.com/token")
+                )
+                .setClientAuthentication(
+                    com.google.api.client.auth.oauth2.ClientParametersAuthentication(
+                        clientId,
+                        clientSecret
+                    )
+                )
+                .build()
+            
+            credential.setAccessToken(accessToken)
+            // Note: GoogleAuthUtil doesn't provide refresh token, so we'll need to re-authenticate when token expires
+            val expiresIn = 3600L // Default 1 hour
+            credential.expirationTimeMilliseconds = 
+                System.currentTimeMillis() + (expiresIn * 1000)
+            
+            // Store tokens (without refresh token)
+            authPreferences.saveTokens(
+                accessToken = accessToken,
+                refreshToken = "", // No refresh token available
+                expiresIn = expiresIn
+            )
+            
+            _currentCredential.value = credential
+            _isAuthenticated.value = true
+            
+            Log.d(TAG, "Authentication successful with Google Sign-In account")
+            Result.success(credential)
+        } catch (e: Exception) {
+            Log.e(TAG, "Google Sign-In account handling failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Handle server auth code from Google Sign-In and exchange for tokens
+     */
+    suspend fun handleServerAuthCode(
+        serverAuthCode: String,
+        clientId: String,
+        clientSecret: String
+    ): Result<Credential> {
+        return try {
+            val transport = NetHttpTransport()
+            val jsonFactory = GsonFactory.getDefaultInstance()
+
+            val requestData = mapOf(
+                "code" to serverAuthCode,
+                "client_id" to clientId,
+                "client_secret" to clientSecret,
+                "redirect_uri" to "urn:ietf:wg:oauth:2.0:oob", // Server auth code uses this
+                "grant_type" to "authorization_code"
+            )
+
+            // Exchange server auth code for tokens
+            val tokenRequest = transport.createRequestFactory()
+                .buildPostRequest(
+                    com.google.api.client.http.GenericUrl("https://oauth2.googleapis.com/token"),
+                    UrlEncodedContent(requestData)
+                )
+            
+            val response = tokenRequest.execute()
+            val tokenResponse = response.parseAs(TokenResponse::class.java)
+            
+            if (tokenResponse.accessToken == null) {
+                throw IllegalStateException("Failed to get access token from OAuth response")
+            }
+
+            // Create credential
+            val credential = Credential.Builder(
+                com.google.api.client.auth.oauth2.BearerToken.authorizationHeaderAccessMethod()
+            )
+                .setTransport(transport)
+                .setJsonFactory(jsonFactory)
+                .setTokenServerUrl(
+                    com.google.api.client.http.GenericUrl("https://oauth2.googleapis.com/token")
+                )
+                .setClientAuthentication(
+                    com.google.api.client.auth.oauth2.ClientParametersAuthentication(
+                        clientId,
+                        clientSecret
+                    )
+                )
+                .build()
+
+            credential.setAccessToken(tokenResponse.accessToken)
+            credential.setRefreshToken(tokenResponse.refreshToken)
+            val expiresIn = tokenResponse.expiresInSeconds ?: 3600L
+            credential.expirationTimeMilliseconds = 
+                System.currentTimeMillis() + (expiresIn * 1000)
+
+            // Store tokens
+            authPreferences.saveTokens(
+                accessToken = tokenResponse.accessToken,
+                refreshToken = tokenResponse.refreshToken ?: "",
+                expiresIn = expiresIn
+            )
+
+            _currentCredential.value = credential
+            _isAuthenticated.value = true
+
+            Log.d(TAG, "Authentication successful with server auth code")
+            Result.success(credential)
+        } catch (e: Exception) {
+            Log.e(TAG, "Server auth code exchange failed", e)
+            Result.failure(e)
+        }
+    }
 
     /**
      * Handle OAuth callback and exchange code for tokens

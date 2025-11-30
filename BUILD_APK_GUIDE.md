@@ -1,5 +1,11 @@
 # 🚀 מדריך יצירת APK - CloudTunes Music Player
 
+> ⚡ **טיפ:** אם אתה בפיתוח פעיל, **מומלץ להשתמש ב-USB Debugging** במקום לבנות APK כל פעם!
+> 
+> ראה: **[USB_DEBUGGING_GUIDE.md](./USB_DEBUGGING_GUIDE.md)** - עדכון קוד מיידי ללא בניית APK!
+
+---
+
 ## ✅ מה מוכן:
 - ✅ **Application ID**: `com.cloudtunes.music`
 - ✅ **Version**: 1.0 (versionCode: 1)

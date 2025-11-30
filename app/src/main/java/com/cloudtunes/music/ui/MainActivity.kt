@@ -64,13 +64,40 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
-        try {
-            val account = completedTask.getResult(ApiException::class.java)
-            // Account signed in successfully
-            // The OAuth flow will be handled by AuthRepository
-        } catch (e: ApiException) {
-            // Sign in failed
-            android.util.Log.e("MainActivity", "Sign in failed: ${e.statusCode}")
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val account = completedTask.getResult(ApiException::class.java)
+                // Account signed in successfully
+                val clientId = getString(R.string.google_client_id)
+                val clientSecret = getString(R.string.google_client_secret)
+                
+                // Try server auth code first (if available)
+                val serverAuthCode = account.serverAuthCode
+                val result = if (serverAuthCode != null) {
+                    // Exchange server auth code for tokens with refresh token
+                    authRepository.handleServerAuthCode(
+                        serverAuthCode = serverAuthCode,
+                        clientId = clientId,
+                        clientSecret = clientSecret
+                    )
+                } else {
+                    // Fallback to GoogleAuthUtil (no refresh token)
+                    authRepository.handleGoogleSignInAccount(
+                        account = account,
+                        clientId = clientId,
+                        clientSecret = clientSecret
+                    )
+                }
+                
+                if (result.isFailure) {
+                    android.util.Log.e("MainActivity", "Failed to authenticate", result.exceptionOrNull())
+                } else {
+                    android.util.Log.d("MainActivity", "Authentication successful")
+                }
+            } catch (e: ApiException) {
+                // Sign in failed
+                android.util.Log.e("MainActivity", "Sign in failed: ${e.statusCode}", e)
+            }
         }
     }
 }
