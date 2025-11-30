@@ -1,0 +1,12 @@
+# Google OAuth Credentials
+# Copy this file to .env and fill in your credentials
+# Get these from: https://console.cloud.google.com/apis/credentials
+# Create OAuth 2.0 Client ID for Web application
+
+VITE_GOOGLE_CLIENT_ID=your-google-client-id-here
+VITE_GOOGLE_CLIENT_SECRET=your-google-client-secret-here
+
+# Note: Make sure to add your redirect URI to Google Console:
+# For local development: http://localhost:3000/callback
+# For production: https://yourdomain.com/callback
+

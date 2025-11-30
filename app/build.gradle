@@ -25,9 +25,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            debuggable true
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug // Use debug signing for now - change to release signing later
+        }
+    }
+    
+    // Enable APK generation
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "CloudTunes-${variant.name}-${variant.versionName}.apk"
         }
     }
     

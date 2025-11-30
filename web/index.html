@@ -4,7 +4,27 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="CloudTunes Music Player - נגן מוזיקה מ-Google Drive" />
     <title>CloudTunes Music Player</title>
+    <style>
+      /* Loading screen while React loads */
+      #root:empty::before {
+        content: "טוען...";
+        display: block;
+        text-align: center;
+        padding: 50px;
+        font-size: 18px;
+        color: #fff;
+        background: #121212;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #121212;
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

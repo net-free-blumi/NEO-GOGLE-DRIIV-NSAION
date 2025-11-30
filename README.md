@@ -1,6 +1,10 @@
-# Music Player - Android App
+# CloudTunes Music Player
 
-אפליקציית מוזיקה לאנדרואיד שמתחברת ל-Google Drive ומנגנת קבצי מוזיקה ישירות משם.
+אפליקציית מוזיקה שמתחברת ל-Google Drive ומנגנת קבצי מוזיקה ישירות משם.
+
+**זמין ב-2 גרסאות:**
+- 📱 **Android App** (APK) - אפליקציית Android native
+- 🌐 **Web App** - אתר React/TypeScript
 
 ## 🎯 תכונות
 
@@ -33,16 +37,24 @@ app/
 └── build.gradle
 ```
 
-## 🚀 התקנה
+## 🚀 התחלה מהירה
 
-1. פתח את הפרויקט ב-Android Studio
-2. הוסף `google-services.json` (אם נדרש)
-3. הגדר OAuth2 credentials ב-Google Cloud Console
-4. עדכן את `app/src/main/res/values/credentials.xml` עם:
-   - Google Client ID
-   - Google Client Secret
-   - Google Drive Folder ID
-5. בנה את הפרויקט
+### Web (אתר)
+```bash
+cd web
+npm install
+# צור קובץ .env (ראה ENV_EXAMPLE.txt)
+npm run dev
+```
+
+### Android (APK)
+```bash
+# דרך Android Studio: Build → Build APK(s)
+# או דרך Command Line:
+gradlew assembleDebug
+```
+
+📖 **מדריך מפורט**: ראה `SETUP_GUIDE.md` או `QUICK_START.md`
 
 ## 📦 טכנולוגיות
 
@@ -62,7 +74,9 @@ app/
 
 ## 📝 תיעוד
 
-- `SETUP.md` - הוראות התקנה מפורטות
+- `QUICK_START.md` - התחלה מהירה (מומלץ להתחיל כאן!)
+- `SETUP_GUIDE.md` - מדריך התקנה מפורט
+- `SETUP.md` - הוראות התקנה מפורטות (Android)
 - `ARCHITECTURE.md` - תיעוד ארכיטקטורה
 - `CREDENTIALS_SETUP.md` - הגדרת Credentials
 - `NEXT_STEPS.md` - צעדים הבאים

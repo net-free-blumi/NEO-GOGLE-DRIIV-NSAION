@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react'
 import { log } from '../utils/logger'
 
 interface AuthContextType {
@@ -16,16 +16,32 @@ const CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ''
 const REDIRECT_URI = window.location.origin + '/callback'
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
 
+// Validate configuration on load
+if (!CLIENT_ID) {
+  console.error('⚠️ VITE_GOOGLE_CLIENT_ID is missing! Please create a .env file with your credentials.')
+}
+if (!CLIENT_SECRET) {
+  console.error('⚠️ VITE_GOOGLE_CLIENT_SECRET is missing! Please create a .env file with your credentials.')
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [accessToken, setAccessTokenState] = useState<string | null>(null)
 
+  const initializedRef = useRef(false)
+
   useEffect(() => {
+    // Prevent multiple initializations (React StrictMode runs twice in dev)
+    if (initializedRef.current) {
+      return
+    }
+    initializedRef.current = true
+
     // Check if we have stored token
     const storedToken = localStorage.getItem('access_token')
     const storedRefreshToken = localStorage.getItem('refresh_token')
     
-    log('Checking stored tokens...', 'info')
+    log('Checking stored tokens on app load...', 'info')
     log(`Access token exists: ${!!storedToken}`, 'info')
     log(`Refresh token exists: ${!!storedRefreshToken}`, 'info')
     
@@ -33,28 +49,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Verify token is still valid
       verifyToken(storedToken).then(isValid => {
         if (isValid) {
-          log('Stored token is valid', 'info')
+          log('Stored token is valid, using it', 'info')
           setAccessTokenState(storedToken)
           setIsAuthenticated(true)
         } else {
           log('Stored token expired, refreshing...', 'warn')
           refreshAccessToken(storedRefreshToken)
         }
+      }).catch(err => {
+        log(`Token verification error: ${err}, trying refresh...`, 'warn')
+        if (storedRefreshToken) {
+          refreshAccessToken(storedRefreshToken)
+        }
       })
+    } else if (storedRefreshToken && !storedToken) {
+      // Only refresh token exists, refresh it
+      log('Only refresh token exists, refreshing...', 'info')
+      refreshAccessToken(storedRefreshToken)
+    } else {
+      log('No stored tokens found', 'info')
     }
   }, [])
 
   const verifyToken = async (token: string): Promise<boolean> => {
     try {
-      const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + token)
-      return response.ok
-    } catch (error) {
-      log(`Token verification failed: ${error}`, 'error')
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+      
+      const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + token, {
+        method: 'GET',
+        signal: controller.signal,
+      })
+      
+      clearTimeout(timeoutId)
+      
+      if (response.ok) {
+        const data = await response.json()
+        // Check if token is expired or expires soon
+        if (data.expires_in && data.expires_in < 60) {
+          log(`Token expires soon (${data.expires_in}s), will refresh`, 'warn')
+          return false // Trigger refresh
+        }
+        return true
+      }
+      return false
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        log('Token verification timeout', 'warn')
+      } else {
+        log(`Token verification failed: ${error}`, 'warn')
+      }
       return false
     }
   }
 
   const refreshAccessToken = async (refreshToken: string) => {
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+      log('❌ Missing credentials for token refresh', 'error')
+      return
+    }
+
     try {
       log('Refreshing access token...', 'info')
       const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -77,8 +131,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessTokenState(data.access_token)
         localStorage.setItem('access_token', data.access_token)
         setIsAuthenticated(true)
+        
+        // If we got a new refresh token, save it
+        if (data.refresh_token) {
+          log('New refresh token received, saving...', 'info')
+          localStorage.setItem('refresh_token', data.refresh_token)
+        }
       } else {
         log(`Token refresh failed: ${JSON.stringify(data)}`, 'error')
+        if (data.error === 'invalid_grant') {
+          log('Refresh token expired or invalid, need to login again', 'error')
+          // Clear invalid tokens
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+        }
         logout()
       }
     } catch (error) {
@@ -88,7 +154,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = () => {
+    if (!CLIENT_ID) {
+      log('❌ Google Client ID is missing! Please check your .env file.', 'error')
+      alert('שגיאה: חסר Google Client ID. אנא בדוק את קובץ .env')
+      return
+    }
+    
     log('Initiating Google OAuth login...', 'info')
+    log(`Client ID: ${CLIENT_ID.substring(0, 20)}...`, 'info')
+    log(`Redirect URI: ${REDIRECT_URI}`, 'info')
+    
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${CLIENT_ID}&` +
       `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
@@ -97,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       `access_type=offline&` +
       `prompt=consent`
     
-    log(`Redirecting to: ${authUrl}`, 'info')
+    log(`Redirecting to: ${authUrl.substring(0, 100)}...`, 'info')
     window.location.href = authUrl
   }
 

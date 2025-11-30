@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { log } from '../utils/logger'
@@ -7,12 +7,27 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ''
 const REDIRECT_URI = window.location.origin + '/callback'
 
+// Validate configuration
+if (!CLIENT_ID || !CLIENT_SECRET) {
+  console.error('⚠️ Missing Google OAuth credentials in .env file!')
+}
+
+// Global flag to prevent duplicate processing (survives React StrictMode)
+let isProcessing = false
+
 export default function GoogleCallback() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { setAccessToken } = useAuth()
+  const hasProcessedRef = useRef(false)
 
   useEffect(() => {
+    // Prevent multiple executions (even with React StrictMode)
+    if (hasProcessedRef.current || isProcessing) {
+      log('Already processed callback, skipping...', 'info')
+      return
+    }
+
     const code = searchParams.get('code')
     const error = searchParams.get('error')
 
@@ -22,23 +37,42 @@ export default function GoogleCallback() {
 
     if (error) {
       log(`OAuth error: ${error}`, 'error')
-      navigate('/login')
+      hasProcessedRef.current = true
+      isProcessing = false
+      navigate('/login', { replace: true })
       return
     }
 
     if (!code) {
       log('No authorization code received', 'error')
-      navigate('/login')
+      hasProcessedRef.current = true
+      isProcessing = false
+      navigate('/login', { replace: true })
       return
     }
 
+    // Mark as processed immediately to prevent duplicate calls
+    hasProcessedRef.current = true
+    isProcessing = true
+
     // Exchange code for tokens
-    exchangeCodeForTokens(code)
+    exchangeCodeForTokens(code).finally(() => {
+      isProcessing = false
+    })
   }, [searchParams, navigate, setAccessToken])
 
-  const exchangeCodeForTokens = async (code: string) => {
+  const exchangeCodeForTokens = async (code: string): Promise<void> => {
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+      log('❌ Missing OAuth credentials!', 'error')
+      alert('שגיאה: חסרים credentials. אנא בדוק את קובץ .env')
+      navigate('/login', { replace: true })
+      return
+    }
+    
     try {
       log('Exchanging authorization code for tokens...', 'info')
+      log(`Using Client ID: ${CLIENT_ID.substring(0, 20)}...`, 'info')
+      log(`Redirect URI: ${REDIRECT_URI}`, 'info')
       
       const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -62,21 +96,37 @@ export default function GoogleCallback() {
 
       if (data.access_token) {
         log('Access token received successfully', 'info')
-        setAccessToken(data.access_token)
         
+        // Store tokens
+        localStorage.setItem('access_token', data.access_token)
         if (data.refresh_token) {
           log('Refresh token received, storing...', 'info')
           localStorage.setItem('refresh_token', data.refresh_token)
         }
         
-        navigate('/home')
+        // Set token in context
+        setAccessToken(data.access_token)
+        
+        // Navigate to home
+        log('Redirecting to home page...', 'info')
+        navigate('/home', { replace: true })
       } else {
         log(`Token exchange failed: ${JSON.stringify(data)}`, 'error')
-        navigate('/login')
+        if (data.error === 'invalid_client') {
+          log('❌ Client Secret is wrong or missing!', 'error')
+          alert('שגיאה: Client Secret לא נכון או חסר. אנא בדוק את קובץ .env והוסף את ה-Client Secret מה-Google Console.')
+        } else if (data.error === 'invalid_grant') {
+          log('❌ Authorization code already used or expired!', 'error')
+          // Clear any invalid tokens
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          alert('הקוד כבר שימש או פג תוקף. אנא נסה להתחבר שוב.')
+        }
+        navigate('/login', { replace: true })
       }
     } catch (error) {
       log(`Token exchange error: ${error}`, 'error')
-      navigate('/login')
+      navigate('/login', { replace: true })
     }
   }
 
