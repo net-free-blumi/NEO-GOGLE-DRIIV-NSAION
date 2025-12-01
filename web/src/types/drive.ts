@@ -4,6 +4,7 @@ export interface DriveFile {
   mimeType: string
   size?: string
   webViewLink?: string
+  thumbnailLink?: string
 }
 
 export interface DriveFolder extends DriveFile {

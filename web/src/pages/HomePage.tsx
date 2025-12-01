@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { log } from '../utils/logger'
 import { cleanSongName } from '../utils/songNameCleaner'
 import { FolderStructure, DriveFile } from '../types/drive'
-import MusicPlayer from '../components/MusicPlayer'
+import EnhancedMusicPlayer from '../components/EnhancedMusicPlayer'
+import FolderGrid from '../components/FolderGrid'
 
 const FOLDER_ID = '1EhS3EzpK0dRK62v2V4YZuCLbcCrk6SN9'
 
@@ -18,7 +19,7 @@ export default function HomePage() {
   const [showFolderInput, setShowFolderInput] = useState(false)
   const [playlist, setPlaylist] = useState<{ id: string; name: string; file: DriveFile }[]>([])
   const [currentSongIndex, setCurrentSongIndex] = useState(-1)
-  const [currentSong, setCurrentSong] = useState<{ id: string; name: string; streamUrl: string } | null>(null)
+  const [currentSong, setCurrentSong] = useState<{ id: string; name: string; streamUrl: string; albumArt?: string } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
@@ -71,10 +72,10 @@ export default function HomePage() {
       const folderData = await folderResponse.json()
       log(`Folder found: ${folderData.name}`, 'info')
 
-      // Get all items in folder
+      // Get all items in folder (include thumbnailLink for images)
       const query = `'${targetFolderId}' in parents and trashed=false`
       const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink)&pageSize=1000&orderBy=name`,
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink)&pageSize=1000&orderBy=name`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -166,10 +167,10 @@ export default function HomePage() {
 
     const folderData = await folderResponse.json()
 
-    // Get all items in folder
-    const query = `'${targetFolderId}' in parents and trashed=false`
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink)&pageSize=1000&orderBy=name`,
+      // Get all items in folder (include thumbnailLink for images)
+      const query = `'${targetFolderId}' in parents and trashed=false`
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink)&pageSize=1000&orderBy=name`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -261,7 +262,7 @@ export default function HomePage() {
     // Google Drive API supports this for media files
     const directUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media&access_token=${accessToken}`
     
-    log(`Using direct URL for streaming`, 'info')
+    log(`Using direct URL for streaming: ${directUrl.substring(0, 80)}...`, 'info')
     return directUrl
     
     /* Blob approach (commented out - has compatibility issues)
@@ -347,10 +348,16 @@ export default function HomePage() {
     
     try {
       const blobUrl = await loadSongAsBlob(file)
+      // Try to get thumbnail for album art (if available)
+      const albumArt = file.thumbnailLink 
+        ? `${file.thumbnailLink}&access_token=${accessToken}`
+        : undefined
+      
       setCurrentSong({
         id: file.id,
         name: file.name,
         streamUrl: blobUrl,
+        albumArt: albumArt,
       })
     } catch (error: any) {
       log(`Error loading file: ${error.message}`, 'error')
@@ -358,7 +365,7 @@ export default function HomePage() {
     }
   }
 
-  const handleSongChange = async (song: { id: string; name: string; streamUrl: string }) => {
+  const handleSongChange = async (song: { id: string; name: string; streamUrl: string; albumArt?: string }) => {
     const index = playlist.findIndex(s => s.id === song.id)
     if (index === -1) return
     
@@ -374,10 +381,16 @@ export default function HomePage() {
     const playlistItem = playlist[index]
     try {
       const blobUrl = await loadSongAsBlob(playlistItem.file)
+      // Try to get thumbnail for album art (if available)
+      const albumArt = playlistItem.file.thumbnailLink && accessToken
+        ? `${playlistItem.file.thumbnailLink}&access_token=${accessToken}`
+        : undefined
+      
       setCurrentSong({
         id: playlistItem.id,
         name: playlistItem.name,
         streamUrl: blobUrl,
+        albumArt: albumArt,
       })
     } catch (error: any) {
       log(`Error loading song: ${error.message}`, 'error')
@@ -392,6 +405,9 @@ export default function HomePage() {
         id: nextSong.id,
         name: nextSong.name,
         streamUrl: '', // Will be loaded
+        albumArt: nextSong.file.thumbnailLink && accessToken
+          ? `${nextSong.file.thumbnailLink}&access_token=${accessToken}`
+          : undefined,
       })
     }
   }
@@ -404,93 +420,21 @@ export default function HomePage() {
         id: prevSong.id,
         name: prevSong.name,
         streamUrl: '', // Will be loaded
+        albumArt: prevSong.file.thumbnailLink && accessToken
+          ? `${prevSong.file.thumbnailLink}&access_token=${accessToken}`
+          : undefined,
       })
     }
   }
 
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  // Only one folder can be expanded at a time
+  const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null)
 
   const toggleFolder = (folderId: string) => {
-    const newExpanded = new Set(expandedFolders)
-    if (newExpanded.has(folderId)) {
-      newExpanded.delete(folderId)
-    } else {
-      newExpanded.add(folderId)
-    }
-    setExpandedFolders(newExpanded)
+    // If clicking the same folder, close it. Otherwise, open the new one and close the old one
+    setExpandedFolderId(expandedFolderId === folderId ? null : folderId)
   }
 
-  const renderFolder = (folder: FolderStructure, level: number = 0): JSX.Element => {
-    const hasContent = folder.folders.length > 0 || folder.files.length > 0
-    const isExpanded = expandedFolders.has(folder.id) || level < 2 // Auto-expand first 2 levels
-
-    return (
-      <div key={folder.id} style={{ marginLeft: `${level * 20}px`, marginBottom: '5px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '8px 12px',
-            background: level === 0 ? '#2a2a2a' : '#1e1e1e',
-            borderRadius: '5px',
-            cursor: hasContent ? 'pointer' : 'default',
-            marginBottom: '2px',
-          }}
-          onClick={() => hasContent && toggleFolder(folder.id)}
-        >
-          <span style={{ marginLeft: '10px', fontSize: '18px' }}>
-            {hasContent ? (isExpanded ? '📂' : '📁') : '📁'}
-          </span>
-          <span style={{ fontWeight: 'bold', flex: 1 }}>{folder.name}</span>
-          {hasContent && (
-            <span style={{ fontSize: '12px', color: '#aaa' }}>
-              {folder.folders.length} תיקיות, {folder.files.length} שירים
-            </span>
-          )}
-        </div>
-
-        {isExpanded && (
-          <div style={{ marginTop: '5px' }}>
-            {/* Render subfolders */}
-            {folder.folders.map((subFolder) => renderFolder(subFolder, level + 1))}
-            
-            {/* Render files */}
-            {folder.files.map((file) => (
-              <div
-                key={file.id}
-                onClick={() => handleFileClick(file)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '10px 15px',
-                  marginLeft: `${(level + 1) * 20}px`,
-                  marginBottom: '5px',
-                  background: '#1a1a1a',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#252525'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#1a1a1a'
-                }}
-              >
-                <span style={{ marginLeft: '10px', fontSize: '16px' }}>🎵</span>
-                <span style={{ flex: 1, marginLeft: '10px' }}>{file.name}</span>
-                {file.size && (
-                  <span style={{ fontSize: '12px', color: '#aaa' }}>
-                    {(parseInt(file.size) / 1024 / 1024).toFixed(2)} MB
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
 
   const countAllSongs = (folder: FolderStructure): number => {
     let count = folder.files.length
@@ -506,7 +450,9 @@ export default function HomePage() {
       background: '#121212',
       color: '#fff',
       padding: '20px',
-      paddingBottom: currentSong ? '160px' : '20px', // Space for music player
+      paddingBottom: currentSong ? '120px' : '20px', // Space for music player
+      maxWidth: '1400px',
+      margin: '0 auto',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <h1>Music Player</h1>
@@ -597,28 +543,56 @@ export default function HomePage() {
 
       {!loading && !error && folderStructure && (
         <div>
-          <h2>
-            {folderStructure.name} 
-            {folderStructure && (
-              <span style={{ fontSize: '16px', color: '#aaa', marginRight: '10px' }}>
-                ({countAllSongs(folderStructure)} שירים)
-              </span>
-            )}
-          </h2>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '24px',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}>
+            <h2 style={{ 
+              margin: 0,
+              fontSize: '24px',
+              fontWeight: '600',
+              color: '#fff'
+            }}>
+              {folderStructure.name}
+            </h2>
+            <span style={{ 
+              fontSize: '14px', 
+              color: '#aaa',
+              background: '#1e1e1e',
+              padding: '6px 12px',
+              borderRadius: '8px',
+            }}>
+              {countAllSongs(folderStructure)} שירים
+            </span>
+          </div>
           <div style={{ marginTop: '20px' }}>
-            {renderFolder(folderStructure)}
-                  </div>
+            <FolderGrid
+              folder={folderStructure}
+              onFileClick={handleFileClick}
+              expandedFolderId={expandedFolderId}
+              onFolderToggle={toggleFolder}
+            />
+          </div>
         </div>
       )}
 
-      {/* Music Player */}
+      {/* Enhanced Music Player */}
       {currentSong && (
-        <MusicPlayer 
-          currentSong={currentSong}
+        <EnhancedMusicPlayer 
+          currentSong={{
+            id: currentSong.id,
+            name: currentSong.name,
+            streamUrl: currentSong.streamUrl,
+          }}
           playlist={playlist.map(s => ({ 
             id: s.id, 
             name: s.name, 
-            streamUrl: currentSong?.id === s.id ? currentSong.streamUrl : '' 
+            streamUrl: currentSong?.id === s.id ? currentSong.streamUrl : '',
+            albumArt: currentSong?.id === s.id ? currentSong.albumArt : undefined,
           }))}
           currentIndex={currentSongIndex}
           onClose={() => {

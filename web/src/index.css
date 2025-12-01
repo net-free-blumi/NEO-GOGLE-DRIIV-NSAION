@@ -13,6 +13,14 @@ body {
   background: #121212;
   color: #ffffff;
   direction: rtl;
+  overflow-x: hidden;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
 }
 
 #root {
