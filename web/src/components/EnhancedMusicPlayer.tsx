@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { log } from '../utils/logger'
 
+// Get window width for responsive design
+const getWindowWidth = () => typeof window !== 'undefined' ? window.innerWidth : 1024
+
 interface Song {
   id: string
   name: string
@@ -437,7 +440,13 @@ export default function EnhancedMusicPlayer({
           }}>
             <button
               onClick={toggleMute}
-              onMouseEnter={() => setShowVolumeControl(true)}
+              onMouseEnter={(e) => {
+                setShowVolumeControl(true)
+                e.currentTarget.style.color = '#fff'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#aaa'
+              }}
               style={{
                 background: 'none',
                 border: 'none',
@@ -446,12 +455,6 @@ export default function EnhancedMusicPlayer({
                 fontSize: '22px',
                 padding: '5px',
                 transition: 'color 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#fff'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#aaa'
               }}
               title={isMuted ? 'הפעל קול' : 'השתק'}
             >

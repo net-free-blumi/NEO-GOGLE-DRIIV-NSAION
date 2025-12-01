@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FolderStructure, DriveFile } from '../types/drive'
+
+// Get window width for responsive design
+const getWindowWidth = () => typeof window !== 'undefined' ? window.innerWidth : 1024
 
 interface FolderGridProps {
   folder: FolderStructure
@@ -25,6 +28,13 @@ export default function FolderGrid({
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Use windowWidth for responsive grid
+  const gridColumns = windowWidth < 768 
+    ? 'repeat(auto-fill, minmax(120px, 1fr))'
+    : windowWidth < 1024
+    ? 'repeat(auto-fill, minmax(140px, 1fr))'
+    : 'repeat(auto-fill, minmax(160px, 1fr))'
 
   return (
     <div style={{ marginBottom: '24px' }}>
@@ -76,8 +86,8 @@ export default function FolderGrid({
       {isExpanded && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-          gap: '16px',
+          gridTemplateColumns: gridColumns,
+          gap: windowWidth < 768 ? '12px' : '16px',
           marginBottom: '24px',
           padding: level > 0 ? '0 0 0 24px' : '0',
         }}>
